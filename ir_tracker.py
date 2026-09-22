@@ -69,22 +69,44 @@ def save_incident(incident):
         print(f"[warn] Failed to save incident {incident_id}: {e}")
         return False
 
-if __name__ == '__main__':
-    print("\n=== save_incident ===")
-    inc = create_incident("Save test")
-    inc['stages']['Preparation'].append({
+def add_action(incident, stage, action, notes=""):
+    """
+    Append a timestamped action to a stage of the incident, then save.
+    Returns True on success, False on invalid stage or save failure.
+    """
+    if stage not in STAGES:
+        print(f"[warn] Invalid stage: {stage!r}. "
+              f"Must be one of: {', '.join(STAGES)}")
+        return False
+    entry = {
         'timestamp': datetime.now().isoformat(timespec='seconds'),
-        'action': 'Ran IR tabletop exercise',
-        'notes': 'Quarterly drill',
-    })
-    ok = save_incident(inc)
-    print(f"Save returned: {ok}")
+        'action': action,
+        'notes': notes,
+    }
+    incident['stages'][stage].append(entry)
+
+    if not save_incident(incident):
+        incident['stages'][stage].pop()
+        return False
+
+    return True
+
+
+if __name__ == '__main__':
+    print("\n=== add_action ===")
+    inc = create_incident("Brute Force Response")
+    ok = add_action(inc, 'Preparation', 'Verified firewall ruleset version', notes='Baseline audit before response.')
+    print("Prep add:", ok)
+    ok = add_action(inc, 'Detection/Analysis', 'Confirmed 7 failed SSH logins from 203.0.113.5')
+    print("Detection add:", ok)
+    ok = add_action(inc, 'Bogus Stage', 'should fail')
+    print("Bad stage add:", ok)
     reloaded = load_incident(inc['id'])
-    print("Reloaded Preparation stage entries:",
-          len(reloaded['stages']['Preparation']))
-    print("First action:", reloaded['stages']['Preparation'][0]['action'])
-    print("\nNo-id case:")
-    print("Save returned:", save_incident({'name': 'no id'}))
+    for stage in STAGES:
+        entries = reloaded['stages'][stage]
+        print(f"{stage}: {len(entries)} entries")
+        for e in entries:
+            print(f"  [{e['timestamp']}] {e['action']}")
 
 def ir_menu():
     print("[stub] IR tracker coming in Phase 2.")
