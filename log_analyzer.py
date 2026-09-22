@@ -1,8 +1,7 @@
-import re
-from datetime import datetime
-from collections import defaultdict
-from datetime import timedelta
 import ipaddress
+import re
+from collections import defaultdict
+from datetime import datetime, timedelta
 
 LOG_PATTERN = re.compile(
     r'^(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})'
@@ -39,19 +38,6 @@ def parse_log_line(line):
         'username': match.group('username'),
     }
 
-
-if __name__ == '__main__':
-    tests = [
-        '2025-01-15 08:23:11,192.168.1.10,10.0.0.5,22,FAILED,admin',
-        '',
-        'this is not a log line',
-        '2025-01-15 08:23:11,192.168.1.10,10.0.0.5,22,FAILED,admin\n',  # note trailing \n
-    ]
-    for t in tests:
-        print(f'IN : {t!r}')
-        print(f'OUT: {parse_log_line(t)}')
-        print('-' * 60)
-
 def load_blocklist(filepath):
     """
     Load IPs and CIDR ranges from a blocklist file.
@@ -72,12 +58,6 @@ def load_blocklist(filepath):
     except FileNotFoundError:
         print(f"[warn] Blocklist file not found: {filepath}")
     return networks
-
-if __name__ == '__main__':
-    nets = load_blocklist('data/blocklist.txt')
-    print(f"Loaded {len(nets)} networks:")
-    for n in nets:
-        print(f"  {n}")
 
 def load_logs(filepath, stats=None):
     """
@@ -110,12 +90,6 @@ def load_logs(filepath, stats=None):
 
     print(f"[info] Parsed {len(entries)} entries, skipped {skipped} malformed lines.")
     return entries
-
-if __name__ == '__main__':
-    print("\n=== load_logs test ===")
-    logs = load_logs('data/sample.log')
-    for entry in logs[:3]:
-        print(entry)
 
 def detect_brute_force(logs, threshold=5, window_minutes=5):
     """
@@ -166,15 +140,6 @@ def detect_brute_force(logs, threshold=5, window_minutes=5):
     findings.sort(key=lambda f: f['count'], reverse=True)
     return findings
 
-
-if __name__ == '__main__':
-    print("\n=== brute force test ===")
-    findings = detect_brute_force(logs, threshold=5, window_minutes=5)
-    if not findings:
-        print("No brute-force patterns detected.")
-    for f in findings:
-        print(f)
-
 def detect_unusual_ports(logs, allowed_ports):
     """
     Flag traffic to ports outside the allowed_ports set.
@@ -203,16 +168,6 @@ def detect_unusual_ports(logs, allowed_ports):
 
     findings.sort(key=lambda f: f['count'], reverse=True)
     return findings
-
-
-if __name__ == '__main__':
-    print("\n=== unusual ports test ===")
-    ALLOWED_PORTS = {22, 80, 443, 53, 123}
-    unusual = detect_unusual_ports(logs, ALLOWED_PORTS)
-    if not unusual:
-        print("No unusual port traffic.")
-    for u in unusual:
-        print(u)
 
 def detect_bad_ips(logs, blocklist):
     """
@@ -262,16 +217,6 @@ def detect_bad_ips(logs, blocklist):
 
     findings.sort(key=lambda f: f['timestamp'])
     return findings
-
-
-if __name__ == '__main__':
-    print("\n=== bad IPs test ===")
-    blocklist = load_blocklist('data/blocklist.txt')
-    bad = detect_bad_ips(logs, blocklist)
-    if not bad:
-        print("No blocklist matches.")
-    for b in bad:
-        print(b)
 
 def generate_report(brute_force, unusual_ports, bad_ips, log_stats, output_path=None):
     """
@@ -352,13 +297,34 @@ def run_analysis(log_path, blocklist_path, allowed_ports, threshold=5, window_mi
     bad_ips = detect_bad_ips(logs, blocklist)
     generate_report(brute_force, unusual_ports, bad_ips, log_stats, output_path=output_path)
 
-if __name__ == '__main__':
-    print("\n=== full report ===")
-    log_stats = {'parsed': len(logs), 'skipped': 6}
+def _run_self_tests():
+    """Dev-only self-tests. Not part of the public API."""
+    print("=== parse_log_line ===")
+    for t in [
+        '2025-01-15 08:23:11,192.168.1.10,10.0.0.5,22,FAILED,admin',
+        '',
+        'this is not a log line',
+    ]:
+        print(f'IN : {t!r}\nOUT: {parse_log_line(t)}\n' + '-' * 60)
+
+    print("\n=== load_blocklist ===")
+    nets = load_blocklist('data/blocklist.txt')
+    print(f"Loaded {len(nets)} networks:")
+    for n in nets:
+        print(f"  {n}")
+
+    print("\n=== full pipeline ===")
+    log_stats = {}
+    logs = load_logs('data/sample.log', stats=log_stats)
+    blocklist = load_blocklist('data/blocklist.txt')
+
     generate_report(
-        brute_force=detect_brute_force(logs, threshold=5, window_minutes=5),
+        brute_force=detect_brute_force(logs),
         unusual_ports=detect_unusual_ports(logs, {22, 80, 443, 53, 123}),
-        bad_ips=detect_bad_ips(logs, load_blocklist('data/blocklist.txt')),
+        bad_ips=detect_bad_ips(logs, blocklist),
         log_stats=log_stats,
         output_path='data/report.txt',
     )
+
+if __name__ == '__main__':
+    _run_self_tests()

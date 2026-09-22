@@ -5,11 +5,11 @@ Usage:
     python3 main.py analyze --log data/sample.log --blocklist data/blocklist.txt
     python3 main.py ir
 """
-
 import argparse
 import sys
-import log_analyzer
+
 import ir_tracker
+import log_analyzer
 
 DEFAULT_ALLOWED_PORTS = '22,80,443,53,123'
 
