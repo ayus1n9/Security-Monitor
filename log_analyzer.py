@@ -165,3 +165,42 @@ if __name__ == '__main__':
         print("No brute-force patterns detected.")
     for f in findings:
         print(f)
+
+def detect_unusual_ports(logs, allowed_ports):
+    """
+    Flag traffic to ports outside the allowed_ports set.
+    Returns findings aggregated per (src_ip, dst_ip, dst_port).
+    """
+    buckets = defaultdict(list)
+
+    for entry in logs:
+        if entry['dst_port'] in allowed_ports:
+            continue
+        key = (entry['src_ip'], entry['dst_ip'], entry['dst_port'])
+        buckets[key].append(entry)
+
+    findings = []
+    for (src_ip, dst_ip, dst_port), events in buckets.items():
+        events.sort(key=lambda e: e['timestamp'])
+        findings.append({
+            'src_ip': src_ip,
+            'dst_ip': dst_ip,
+            'dst_port': dst_port,
+            'count': len(events),
+            'first_seen': events[0]['timestamp'],
+            'last_seen': events[-1]['timestamp'],
+            'actions': {e['action'] for e in events},
+        })
+
+    findings.sort(key=lambda f: f['count'], reverse=True)
+    return findings
+
+
+if __name__ == '__main__':
+    print("\n=== unusual ports test ===")
+    ALLOWED_PORTS = {22, 80, 443, 53, 123}
+    unusual = detect_unusual_ports(logs, ALLOWED_PORTS)
+    if not unusual:
+        print("No unusual port traffic.")
+    for u in unusual:
+        print(u)
