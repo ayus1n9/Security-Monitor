@@ -79,10 +79,12 @@ if __name__ == '__main__':
     for n in nets:
         print(f"  {n}")
 
-def load_logs(filepath):
+def load_logs(filepath, stats=None):
     """
     Read a log file line by line and parse each entry.
-    Returns a list of parsed dicts. Malformed lines are counted, not returned.
+    If `stats` (a dict) is provided, it will be populated with
+    'parsed' and 'skipped' counts.
+    Returns a list of parsed dicts.
     """
     entries = []
     skipped = 0
@@ -97,7 +99,14 @@ def load_logs(filepath):
                 entries.append(parsed)
     except FileNotFoundError:
         print(f"[warn] Log file not found: {filepath}")
+        if stats is not None:
+            stats['parsed'] = 0
+            stats['skipped'] = 0
         return []
+
+    if stats is not None:
+        stats['parsed'] = len(entries)
+        stats['skipped'] = skipped
 
     print(f"[info] Parsed {len(entries)} entries, skipped {skipped} malformed lines.")
     return entries
@@ -334,6 +343,14 @@ def generate_report(brute_force, unusual_ports, bad_ips, log_stats, output_path=
             f.write('\n'.join(lines) + '\n')
         print(f"\n[info] Report also written to {output_path}")
 
+def run_analysis(log_path, blocklist_path, allowed_ports, threshold=5, window_minutes=5, output_path=None):
+    log_stats = {}
+    logs = load_logs(log_path, stats=log_stats)
+    blocklist = load_blocklist(blocklist_path)
+    brute_force = detect_brute_force(logs, threshold=threshold, window_minutes=window_minutes)
+    unusual_ports = detect_unusual_ports(logs, allowed_ports)
+    bad_ips = detect_bad_ips(logs, blocklist)
+    generate_report(brute_force, unusual_ports, bad_ips, log_stats, output_path=output_path)
 
 if __name__ == '__main__':
     print("\n=== full report ===")
