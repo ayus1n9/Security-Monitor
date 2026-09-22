@@ -65,7 +65,7 @@ def save_incident(incident):
         with open(path, 'w') as f:
             json.dump(incident, f, indent=2, ensure_ascii=False)
         return True
-    except OSError as e:
+    except (OSError, TypeError) as e:
         print(f"[warn] Failed to save incident {incident_id}: {e}")
         return False
 
@@ -156,20 +156,85 @@ def list_incidents():
     summaries.sort(key=lambda s: s['created'], reverse=True)
     return summaries
 
+def ir_menu():
+    """
+    Interactive IR tracker menu. Returns when user chooses Exit.
+    """
+    current = None
+    print("\n=== IR TRACKER ===")
+    try:
+        while True:
+            print()
+            if current:
+                print(f"Current incident: {current['id']} — {current['name']}")
+            else:
+                print("Current incident: (none loaded)")
+            print("  1. List all incidents")
+            print("  2. Create new incident")
+            print("  3. Load an incident by ID")
+            print("  4. Add action to current incident")
+            print("  5. View current incident")
+            print("  6. Exit")
+            choice = input("Choice: ").strip()
+            if choice == '1':
+                incidents = list_incidents()
+                if not incidents:
+                    print("  (no incidents yet)")
+                    continue
+                for s in incidents:
+                    print(f"  {s['id']}  {s['name']}  "
+                        f"(actions={s['total_actions']})")
+            elif choice == '2':
+                name = input("Incident name: ").strip()
+                if not name:
+                    print("  [warn] Name cannot be empty.")
+                    continue
+                current = create_incident(name)
+                print(f"  Created {current['id']}")
+            elif choice == '3':
+                incident_id = input("Incident ID: ").strip()
+                loaded = load_incident(incident_id)
+                if loaded:
+                    current = loaded
+                    print(f"  Loaded {current['id']}")
+            elif choice == '4':
+                if not current:
+                    print("  [warn] Load or create an incident first.")
+                    continue
+                print("  Stages:")
+                for i, stage in enumerate(STAGES, start=1):
+                    print(f"    {i}. {stage}")
+                stage_choice = input("  Stage number: ").strip()
+                try:
+                    stage_idx = int(stage_choice) - 1
+                    if stage_idx < 0 or stage_idx >= len(STAGES):
+                        raise ValueError
+                except ValueError:
+                    print("  [warn] Invalid stage number.")
+                    continue
+                stage = STAGES[stage_idx]
+                action = input("  Action: ").strip()
+                if not action:
+                    print("  [warn] Action cannot be empty.")
+                    continue
+                notes = input("  Notes (optional): ").strip()
+                if add_action(current, stage, action, notes):
+                    print(f"  Logged to {stage}")
+            elif choice == '5':
+                if not current:
+                    print("  [warn] No incident loaded.")
+                    continue
+                view_incident(current)
+            elif choice == '6':
+                print("  Exiting IR tracker.")
+                return
+            else:
+                print("  [warn] Unknown choice.")
+            pass
+        
+    except:
+        print("\n  [interrupted] Exiting IR tracker.")
+        return
 
 if __name__ == '__main__':
-    print("\n=== list_incidents ===")
-    incidents = list_incidents()
-    print(f"Found {len(incidents)} incident(s):")
-    for s in incidents:
-        print(f"  {s['id']}  {s['name']}")
-        print(f"    created: {s['created']}  "
-              f"total actions: {s['total_actions']}")
-        counts = ', '.join(
-            f"{stage.split('/')[0]}={s['stage_counts'][stage]}"
-            for stage in STAGES
-        )
-        print(f"    {counts}")
-
-def ir_menu():
-    print("[stub] IR tracker coming in Phase 2.")
+    ir_menu()
