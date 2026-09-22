@@ -128,16 +128,48 @@ def view_incident(incident):
     print(f"  TOTAL ACTIONS LOGGED: {total}")
     print('=' * 70)
 
+def list_incidents():
+    """
+    Return a list of incident summaries sorted newest-first.
+    Skips unreadable/corrupt files.
+    """
+    if not os.path.isdir(INCIDENTS_DIR):
+        return []
+    summaries = []
+    for filename in os.listdir(INCIDENTS_DIR):
+        if not filename.endswith('.json'):
+            continue
+        incident_id = filename[:-len('.json')]
+        incident = load_incident(incident_id)
+        if incident is None:
+            continue
+        stages = incident.get('stages', {})
+        stage_counts = {s: len(stages.get(s, [])) for s in STAGES}
+        total_actions = sum(stage_counts.values())
+        summaries.append({
+            'id': incident.get('id', incident_id),
+            'name': incident.get('name', '(unnamed)'),
+            'created': incident.get('created', ''),
+            'total_actions': total_actions,
+            'stage_counts': stage_counts,
+        })
+    summaries.sort(key=lambda s: s['created'], reverse=True)
+    return summaries
+
 
 if __name__ == '__main__':
-    print("\n=== view_incident ===")
-    inc = create_incident("View Test — Brute Force Response")
-    add_action(inc, 'Preparation', 'Verified firewall ruleset', notes='Baseline audit; version 4.2.1')
-    add_action(inc, 'Detection/Analysis', 'Confirmed 7 failed SSH logins from 203.0.113.5')
-    add_action(inc, 'Containment/Eradication/Recovery', 'Blocked 203.0.113.5 at perimeter firewall')
-    add_action(inc, 'Containment/Eradication/Recovery', 'Rotated root passwords on affected hosts')
-    add_action(inc, 'Post-Incident', 'Scheduled lessons-learned meeting')
-    view_incident(inc)
+    print("\n=== list_incidents ===")
+    incidents = list_incidents()
+    print(f"Found {len(incidents)} incident(s):")
+    for s in incidents:
+        print(f"  {s['id']}  {s['name']}")
+        print(f"    created: {s['created']}  "
+              f"total actions: {s['total_actions']}")
+        counts = ', '.join(
+            f"{stage.split('/')[0]}={s['stage_counts'][stage]}"
+            for stage in STAGES
+        )
+        print(f"    {counts}")
 
 def ir_menu():
     print("[stub] IR tracker coming in Phase 2.")
