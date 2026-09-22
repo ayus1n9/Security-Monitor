@@ -72,10 +72,37 @@ def load_blocklist(filepath):
         print(f"[warn] Blocklist file not found: {filepath}")
     return networks
 
-
 if __name__ == '__main__':
-    # Reuse the previous test block; add this at the bottom for a quick check.
     nets = load_blocklist('data/blocklist.txt')
     print(f"Loaded {len(nets)} networks:")
     for n in nets:
         print(f"  {n}")
+
+def load_logs(filepath):
+    """
+    Read a log file line by line and parse each entry.
+    Returns a list of parsed dicts. Malformed lines are counted, not returned.
+    """
+    entries = []
+    skipped = 0
+
+    try:
+        with open(filepath, 'r') as f:
+            for line in f:
+                parsed = parse_log_line(line.strip())
+                if parsed is None:
+                    skipped += 1
+                    continue
+                entries.append(parsed)
+    except FileNotFoundError:
+        print(f"[warn] Log file not found: {filepath}")
+        return []
+
+    print(f"[info] Parsed {len(entries)} entries, skipped {skipped} malformed lines.")
+    return entries
+
+if __name__ == '__main__':
+    print("\n=== load_logs test ===")
+    logs = load_logs('data/sample.log')
+    for entry in logs[:3]:
+        print(entry)
