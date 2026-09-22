@@ -204,3 +204,62 @@ if __name__ == '__main__':
         print("No unusual port traffic.")
     for u in unusual:
         print(u)
+
+def detect_bad_ips(logs, blocklist):
+    """
+    Flag log entries where src_ip or dst_ip matches a blocklist network.
+    Returns findings in chronological order.
+    """
+    if not blocklist:
+        return []
+
+    findings = []
+
+    for entry in logs:
+        try:
+            src = ipaddress.ip_address(entry['src_ip'])
+            dst = ipaddress.ip_address(entry['dst_ip'])
+        except ValueError:
+            continue
+
+        for net in blocklist:
+            src_hit = src in net
+            dst_hit = dst in net
+            if not (src_hit or dst_hit):
+                continue
+
+            if src_hit and dst_hit:
+                direction = 'both'
+                matched = src
+            elif src_hit:
+                direction = 'src'
+                matched = src
+            else:
+                direction = 'dst'
+                matched = dst
+
+            findings.append({
+                'timestamp': entry['timestamp'],
+                'src_ip': entry['src_ip'],
+                'dst_ip': entry['dst_ip'],
+                'dst_port': entry['dst_port'],
+                'action': entry['action'],
+                'username': entry['username'],
+                'matched_ip': str(matched),
+                'matched_network': str(net),
+                'match_direction': direction,
+            })
+            break
+
+    findings.sort(key=lambda f: f['timestamp'])
+    return findings
+
+
+if __name__ == '__main__':
+    print("\n=== bad IPs test ===")
+    blocklist = load_blocklist('data/blocklist.txt')
+    bad = detect_bad_ips(logs, blocklist)
+    if not bad:
+        print("No blocklist matches.")
+    for b in bad:
+        print(b)
