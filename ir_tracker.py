@@ -91,22 +91,53 @@ def add_action(incident, stage, action, notes=""):
 
     return True
 
+def view_incident(incident):
+    """
+    Pretty-print an incident's timeline, stages in lifecycle order.
+    """
+    if incident is None:
+        print("[warn] No incident to view.")
+        return
+    def fmt_ts(iso_str):
+        try:
+            return datetime.fromisoformat(iso_str).strftime('%Y-%m-%d %H:%M:%S')
+        except (ValueError, TypeError):
+            return str(iso_str)
+    print('=' * 70)
+    print(f"  Incident: {incident.get('id', '?')}  —  {incident.get('name', '(unnamed)')}")
+    print(f"  Created : {fmt_ts(incident.get('created', ''))}")
+    print('=' * 70)
+    for stage in STAGES:
+        entries = incident.get('stages', {}).get(stage, [])
+        print(f"\n[{stage}]  ({len(entries)} entries)")
+        print('-' * 70)
+        if not entries:
+            print("  (no actions logged)")
+            continue
+        for e in entries:
+            ts = fmt_ts(e.get('timestamp', ''))
+            action = e.get('action', '(no action)')
+            print(f"  {ts}  {action}")
+
+            notes = e.get('notes', '')
+            if notes:
+                print(f"      └─ {notes}")
+
+    total = sum(len(incident.get('stages', {}).get(s, [])) for s in STAGES)
+    print('\n' + '=' * 70)
+    print(f"  TOTAL ACTIONS LOGGED: {total}")
+    print('=' * 70)
+
 
 if __name__ == '__main__':
-    print("\n=== add_action ===")
-    inc = create_incident("Brute Force Response")
-    ok = add_action(inc, 'Preparation', 'Verified firewall ruleset version', notes='Baseline audit before response.')
-    print("Prep add:", ok)
-    ok = add_action(inc, 'Detection/Analysis', 'Confirmed 7 failed SSH logins from 203.0.113.5')
-    print("Detection add:", ok)
-    ok = add_action(inc, 'Bogus Stage', 'should fail')
-    print("Bad stage add:", ok)
-    reloaded = load_incident(inc['id'])
-    for stage in STAGES:
-        entries = reloaded['stages'][stage]
-        print(f"{stage}: {len(entries)} entries")
-        for e in entries:
-            print(f"  [{e['timestamp']}] {e['action']}")
+    print("\n=== view_incident ===")
+    inc = create_incident("View Test — Brute Force Response")
+    add_action(inc, 'Preparation', 'Verified firewall ruleset', notes='Baseline audit; version 4.2.1')
+    add_action(inc, 'Detection/Analysis', 'Confirmed 7 failed SSH logins from 203.0.113.5')
+    add_action(inc, 'Containment/Eradication/Recovery', 'Blocked 203.0.113.5 at perimeter firewall')
+    add_action(inc, 'Containment/Eradication/Recovery', 'Rotated root passwords on affected hosts')
+    add_action(inc, 'Post-Incident', 'Scheduled lessons-learned meeting')
+    view_incident(inc)
 
 def ir_menu():
     print("[stub] IR tracker coming in Phase 2.")
