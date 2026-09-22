@@ -1,5 +1,7 @@
 import re
 from datetime import datetime
+from collections import defaultdict
+from datetime import timedelta
 import ipaddress
 
 LOG_PATTERN = re.compile(
@@ -11,7 +13,6 @@ LOG_PATTERN = re.compile(
     r',(?P<username>\S+)'
     r'\s*$'
 )
-
 
 def parse_log_line(line):
     """
@@ -106,3 +107,61 @@ if __name__ == '__main__':
     logs = load_logs('data/sample.log')
     for entry in logs[:3]:
         print(entry)
+
+def detect_brute_force(logs, threshold=5, window_minutes=5):
+    """
+    Flag (src_ip, username) pairs with >= threshold FAILED logins
+    inside any sliding window of window_minutes.
+    Returns a list of findings sorted by count (descending).
+    """
+    failures = defaultdict(list)
+    for entry in logs:
+        if entry['action'] != 'FAILED':
+            continue
+        key = (entry['src_ip'], entry['username'])
+        failures[key].append(entry)
+
+    findings = []
+    window = timedelta(minutes=window_minutes)
+
+    for (src_ip, username), events in failures.items():
+        events.sort(key=lambda e: e['timestamp'])
+
+        start = 0
+        n = len(events)
+        best_count = 0
+        best_first = None
+        best_last = None
+        best_ports = set()
+
+        for end in range(n):
+            while events[end]['timestamp'] - events[start]['timestamp'] > window:
+                start += 1
+            count = end - start + 1
+            if count > best_count:
+                best_count = count
+                best_first = events[start]['timestamp']
+                best_last = events[end]['timestamp']
+                best_ports = {e['dst_port'] for e in events[start:end + 1]}
+
+        if best_count >= threshold:
+            findings.append({
+                'src_ip': src_ip,
+                'username': username,
+                'count': best_count,
+                'first_seen': best_first,
+                'last_seen': best_last,
+                'dst_ports': best_ports,
+            })
+
+    findings.sort(key=lambda f: f['count'], reverse=True)
+    return findings
+
+
+if __name__ == '__main__':
+    print("\n=== brute force test ===")
+    findings = detect_brute_force(logs, threshold=5, window_minutes=5)
+    if not findings:
+        print("No brute-force patterns detected.")
+    for f in findings:
+        print(f)
