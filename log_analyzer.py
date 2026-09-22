@@ -263,3 +263,85 @@ if __name__ == '__main__':
         print("No blocklist matches.")
     for b in bad:
         print(b)
+
+def generate_report(brute_force, unusual_ports, bad_ips, log_stats, output_path=None):
+    """
+    Print (and optionally write) a formatted analysis report.
+    """
+    lines = []
+
+    def emit(text=''):
+        lines.append(text)
+        print(text)
+
+    def fmt_dt(dt):
+        return dt.strftime('%Y-%m-%d %H:%M:%S')
+
+    emit('=' * 70)
+    emit('  FIREWALL / SERVER LOG ANALYSIS REPORT')
+    emit(f"  Generated: {fmt_dt(datetime.now())}")
+    emit(f"  Log entries parsed: {log_stats.get('parsed', 0)}")
+    emit(f"  Malformed lines skipped: {log_stats.get('skipped', 0)}")
+    emit('=' * 70)
+
+    emit(f"\n[1] BRUTE FORCE ATTEMPTS DETECTED: {len(brute_force)}")
+    emit('-' * 70)
+    if not brute_force:
+        emit('  (none)')
+    else:
+        for f in brute_force:
+            ports = ', '.join(str(p) for p in sorted(f['dst_ports']))
+            emit(f"  src={f['src_ip']}  user={f['username']}  "
+                 f"attempts={f['count']}")
+            emit(f"    window : {fmt_dt(f['first_seen'])} -> "
+                 f"{fmt_dt(f['last_seen'])}")
+            emit(f"    ports  : {ports}")
+
+    emit(f"\n[2] TRAFFIC ON UNUSUAL PORTS: {len(unusual_ports)}")
+    emit('-' * 70)
+    if not unusual_ports:
+        emit('  (none)')
+    else:
+        for u in unusual_ports:
+            actions = ', '.join(sorted(u['actions']))
+            emit(f"  {u['src_ip']} -> {u['dst_ip']}:{u['dst_port']}  "
+                 f"count={u['count']}  actions=[{actions}]")
+            emit(f"    first : {fmt_dt(u['first_seen'])}")
+            emit(f"    last  : {fmt_dt(u['last_seen'])}")
+
+    emit(f"\n[3] BLOCKLIST HITS: {len(bad_ips)}")
+    emit('-' * 70)
+    if not bad_ips:
+        emit('  (none)')
+    else:
+        for b in bad_ips:
+            emit(f"  {fmt_dt(b['timestamp'])}  "
+                 f"{b['src_ip']} -> {b['dst_ip']}:{b['dst_port']}  "
+                 f"{b['action']}  user={b['username']}")
+            emit(f"    matched: {b['matched_ip']} "
+                 f"({b['matched_network']})  direction={b['match_direction']}")
+
+    total = len(brute_force) + len(unusual_ports) + len(bad_ips)
+    emit('\n' + '=' * 70)
+    emit(f"  SUMMARY: {total} total findings "
+         f"({len(brute_force)} brute force, "
+         f"{len(unusual_ports)} unusual ports, "
+         f"{len(bad_ips)} blocklist hits)")
+    emit('=' * 70)
+
+    if output_path:
+        with open(output_path, 'w') as f:
+            f.write('\n'.join(lines) + '\n')
+        print(f"\n[info] Report also written to {output_path}")
+
+
+if __name__ == '__main__':
+    print("\n=== full report ===")
+    log_stats = {'parsed': len(logs), 'skipped': 6}
+    generate_report(
+        brute_force=detect_brute_force(logs, threshold=5, window_minutes=5),
+        unusual_ports=detect_unusual_ports(logs, {22, 80, 443, 53, 123}),
+        bad_ips=detect_bad_ips(logs, load_blocklist('data/blocklist.txt')),
+        log_stats=log_stats,
+        output_path='data/report.txt',
+    )
