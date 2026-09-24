@@ -26,7 +26,13 @@ def parse_log_line(line):
 
     try:
         timestamp = datetime.strptime(match.group('timestamp'), '%Y-%m-%d %H:%M:%S')
+        
         dst_port = int(match.group('dst_port'))
+        if not 0 <= dst_port <= 65535:
+            return None
+        
+        ipaddress.ip_address(match.group('src_ip'))
+        ipaddress.ip_address(match.group('dst_ip'))
     except ValueError:
         return None
 
@@ -56,8 +62,8 @@ def load_blocklist(filepath):
                     networks.append(ipaddress.ip_network(entry, strict=False))
                 except ValueError:
                     print(f"[warn] Skipping invalid blocklist entry: {entry!r}")
-    except FileNotFoundError:
-        print(f"[warn] Blocklist file not found: {filepath}")
+    except (OSError, UnicodeError) as e:
+        print(f"[warn] Failed to read blocklist {filepath}: {e}")
     return networks
 
 def load_logs(filepath, stats=None):
@@ -78,8 +84,8 @@ def load_logs(filepath, stats=None):
                     skipped += 1
                     continue
                 entries.append(parsed)
-    except FileNotFoundError:
-        print(f"[warn] Log file not found: {filepath}")
+    except (OSError, UnicodeError) as e:
+        print(f"[warn] Failed to read log file {filepath}: {e}")
         if stats is not None:
             stats['parsed'] = 0
             stats['skipped'] = 0
@@ -336,7 +342,8 @@ def run_analysis(log_path=None, blocklist_path=None, allowed_ports=None, thresho
 
     log_path        = log_path        or config['log_path']
     blocklist_path  = blocklist_path  or config['blocklist_path']
-    allowed_ports   = allowed_ports   or set(config['allowed_ports'])
+    if allowed_ports is None:
+        allowed_ports = set(config['allowed_ports'])
     threshold       = threshold       if threshold       is not None else config['brute_force_threshold']
     window_minutes  = window_minutes  if window_minutes  is not None else config['brute_force_window_minutes']
     output_path     = output_path     or config['report_output']

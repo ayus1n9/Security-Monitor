@@ -290,3 +290,15 @@ def test_off_hours_boundary_hours():
     findings = detect_off_hours_activity(logs, work_start=8, work_end=18)
     assert len(findings) == 1
     assert findings[0]['username'] == 'b'
+
+def test_parse_invalid_src_ip_returns_none():
+    line = '2025-01-15 08:23:11,999.999.999.999,10.0.0.5,22,FAILED,admin'
+    assert parse_log_line(line) is None
+
+def test_parse_invalid_dst_ip_returns_none():
+    line = '2025-01-15 08:23:11,192.168.1.10,999.999.999.999,22,FAILED,admin'
+    assert parse_log_line(line) is None
+
+def test_parse_invalid_port_returns_none():
+    line = '2025-01-15 08:23:11,192.168.1.10,10.0.0.5,99999,FAILED,admin'
+    assert parse_log_line(line) is None
