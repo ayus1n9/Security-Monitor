@@ -1,6 +1,7 @@
 import json
 import os
 from datetime import datetime
+import uuid
 
 STAGES = [
     'Preparation',
@@ -16,7 +17,8 @@ def create_incident(name):
     Create a new incident record, save it to disk, return the dict.
     """
     now = datetime.now()
-    incident_id = f"INC-{now.strftime('%Y%m%d-%H%M%S')}"
+    suffix = uuid.uuid4().hex[:4]
+    incident_id = f"INC-{now.strftime('%Y%m%d-%H%M%S')}-{suffix}"
 
     incident = {
         'id': incident_id,
