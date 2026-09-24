@@ -12,6 +12,7 @@ from log_analyzer import (
     detect_unusual_ports,
     detect_bad_ips,
     detect_port_scan,
+    detect_distributed_brute_force,
 )
 
 def make_entry(ts_str, src, dst, port, action='FAILED', user='root'):
@@ -199,3 +200,47 @@ def test_port_scan_separates_targets():
     ]
     findings = detect_port_scan(logs, port_threshold=3, window_minutes=2)
     assert len(findings) == 2
+
+def test_distributed_brute_force_fires():
+    logs = [
+        make_entry(f'2025-01-15 08:30:{i:02d}', f'1.2.3.{i}', '10.0.0.5', 22)
+        for i in range(5)
+    ]
+    findings = detect_distributed_brute_force(
+        logs, src_threshold=5, window_minutes=5)
+    assert len(findings) == 1
+    assert findings[0]['unique_sources'] == 5
+    assert findings[0]['total_attempts'] == 5
+    assert findings[0]['dst_port'] == 22
+    assert findings[0]['username'] == 'root'
+
+def test_distributed_brute_force_ignores_single_source():
+    logs = [
+        make_entry(f'2025-01-15 08:30:{i:02d}', '1.2.3.4', '10.0.0.5', 22)
+        for i in range(20)
+    ]
+    assert detect_distributed_brute_force(
+        logs, src_threshold=5, window_minutes=5) == []
+
+def test_distributed_brute_force_respects_window():
+    logs = [
+        make_entry(f'2025-01-15 08:{i*7:02d}:00', f'1.2.3.{i}', '10.0.0.5', 22)
+        for i in range(5)
+    ]
+    assert detect_distributed_brute_force(
+        logs, src_threshold=5, window_minutes=5) == []
+
+def test_distributed_brute_force_separates_usernames():
+    logs = [
+        make_entry('2025-01-15 08:30:01', '1.2.3.1', '10.0.0.5', 22, user='root'),
+        make_entry('2025-01-15 08:30:02', '1.2.3.2', '10.0.0.5', 22, user='root'),
+        make_entry('2025-01-15 08:30:03', '1.2.3.3', '10.0.0.5', 22, user='root'),
+        make_entry('2025-01-15 08:30:04', '1.2.3.4', '10.0.0.5', 22, user='admin'),
+        make_entry('2025-01-15 08:30:05', '1.2.3.5', '10.0.0.5', 22, user='admin'),
+        make_entry('2025-01-15 08:30:06', '1.2.3.6', '10.0.0.5', 22, user='admin'),
+    ]
+    findings = detect_distributed_brute_force(
+        logs, src_threshold=3, window_minutes=5)
+    assert len(findings) == 2
+    usernames = {f['username'] for f in findings}
+    assert usernames == {'root', 'admin'}

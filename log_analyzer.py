@@ -380,5 +380,67 @@ def detect_port_scan(logs, port_threshold=10, window_minutes=2):
     findings.sort(key=lambda f: f['unique_ports'], reverse=True)
     return findings
 
+def detect_distributed_brute_force(logs, src_threshold=5, window_minutes=5):
+    """
+    Flag (dst_ip, dst_port, username) targets hit by >= src_threshold
+    unique source IPs inside any window_minutes sliding window.
+    This is the botnet / distributed brute-force signature.
+    Returns findings sorted by unique_sources descending.
+    """
+    if not logs:
+        return []
+
+    failures = [e for e in logs if e['action'] == 'FAILED']
+    if not failures:
+        return []
+
+    buckets = defaultdict(list)
+    for entry in failures:
+        key = (entry['dst_ip'], entry['dst_port'], entry['username'])
+        buckets[key].append(entry)
+
+    window = timedelta(minutes=window_minutes)
+    findings = []
+
+    for (dst_ip, dst_port, username), events in buckets.items():
+        events.sort(key=lambda e: e['timestamp'])
+
+        start = 0
+        n = len(events)
+        best_unique = 0
+        best_first = None
+        best_last = None
+        best_sources = set()
+        best_total = 0
+
+        for end in range(n):
+            while events[end]['timestamp'] - events[start]['timestamp'] > window:
+                start += 1
+
+            window_events = events[start:end + 1]
+            unique_sources = {e['src_ip'] for e in window_events}
+
+            if len(unique_sources) > best_unique:
+                best_unique = len(unique_sources)
+                best_first = events[start]['timestamp']
+                best_last = events[end]['timestamp']
+                best_sources = unique_sources
+                best_total = len(window_events)
+
+        if best_unique >= src_threshold:
+            findings.append({
+                'dst_ip': dst_ip,
+                'dst_port': dst_port,
+                'username': username,
+                'unique_sources': best_unique,
+                'total_attempts': best_total,
+                'first_seen': best_first,
+                'last_seen': best_last,
+                'sources': sorted(best_sources),
+            })
+
+    findings.sort(key=lambda f: f['unique_sources'], reverse=True)
+    return findings
+
 if __name__ == '__main__':
     _run_self_tests()
