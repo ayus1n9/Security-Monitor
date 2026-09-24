@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
-Domain 4 Toolkit — entry point.
 Usage:
     python3 main.py analyze --log data/sample.log --blocklist data/blocklist.txt
     python3 main.py ir
 """
 import argparse
 import sys
-
+import utils
 import ir_tracker
 import log_analyzer
 
@@ -28,12 +27,14 @@ def build_parser():
     sub = parser.add_subparsers(dest='command', required=True)
 
     a = sub.add_parser('analyze', help='Analyze a firewall/server log')
-    a.add_argument('--log', required=True, help='Path to log file')
-    a.add_argument('--blocklist', required=True, help='Path to blocklist file')
-    a.add_argument('--allowed-ports', type=parse_ports, default=parse_ports(DEFAULT_ALLOWED_PORTS), help=f"Comma-separated allowed ports " f"(default: {DEFAULT_ALLOWED_PORTS})")
-    a.add_argument('--threshold', type=int, default=5, help='Brute-force failure threshold (default: 5)')
-    a.add_argument('--window', type=int, default=5, help='Brute-force window in minutes (default: 5)')
-    a.add_argument('--output', default=None, help='Optional path to also write the report')
+    a.add_argument('--log', default=None, help='Path to log file (default: config)')
+    a.add_argument('--blocklist', default=None, help='Path to blocklist (default: config)')
+    a.add_argument('--allowed-ports', type=parse_ports, default=None, help='Comma-separated allowed ports (default: config)')
+    a.add_argument('--threshold', type=int, default=None, help='Brute-force threshold (default: config)')
+    a.add_argument('--window', type=int, default=None, help='Brute-force window minutes (default: config)')
+    a.add_argument('--output', default=None, help='Path to write the report (default: config)')
+    a.add_argument('--config', default='config.json', help='Path to config file (default: config.json)')
+
     sub.add_parser('ir', help='Launch the interactive IR tracker')
     return parser
 
@@ -42,6 +43,7 @@ def main():
     args = parser.parse_args()
 
     if args.command == 'analyze':
+        config = utils.load_config(args.config)
         log_analyzer.run_analysis(
             log_path=args.log,
             blocklist_path=args.blocklist,
@@ -49,6 +51,7 @@ def main():
             threshold=args.threshold,
             window_minutes=args.window,
             output_path=args.output,
+            config=config,
         )
     elif args.command == 'ir':
         ir_tracker.ir_menu()

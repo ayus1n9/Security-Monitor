@@ -1,4 +1,5 @@
 import ipaddress
+import utils
 import re
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -218,18 +219,23 @@ def detect_bad_ips(logs, blocklist):
     findings.sort(key=lambda f: f['timestamp'])
     return findings
 
-def generate_report(brute_force, unusual_ports, bad_ips, log_stats, output_path=None):
+def generate_report(findings, log_stats, output_path=None):
     """
     Print (and optionally write) a formatted analysis report.
+    `findings` is a dict: keys are detection names, values are lists.
     """
     lines = []
-
     def emit(text=''):
         lines.append(text)
         print(text)
-
     def fmt_dt(dt):
         return dt.strftime('%Y-%m-%d %H:%M:%S')
+    bf   = findings.get('brute_force', [])
+    up   = findings.get('unusual_ports', [])
+    bi   = findings.get('bad_ips', [])
+    ps   = findings.get('port_scan', [])
+    dbf  = findings.get('distributed_bf', [])
+    oh   = findings.get('off_hours', [])
 
     emit('=' * 70)
     emit('  FIREWALL / SERVER LOG ANALYSIS REPORT')
@@ -238,49 +244,80 @@ def generate_report(brute_force, unusual_ports, bad_ips, log_stats, output_path=
     emit(f"  Malformed lines skipped: {log_stats.get('skipped', 0)}")
     emit('=' * 70)
 
-    emit(f"\n[1] BRUTE FORCE ATTEMPTS DETECTED: {len(brute_force)}")
+    emit(f"\n[1] BRUTE FORCE ATTEMPTS: {len(bf)}")
     emit('-' * 70)
-    if not brute_force:
+    if not bf:
         emit('  (none)')
     else:
-        for f in brute_force:
+        for f in bf:
             ports = ', '.join(str(p) for p in sorted(f['dst_ports']))
-            emit(f"  src={f['src_ip']}  user={f['username']}  "
-                 f"attempts={f['count']}")
-            emit(f"    window : {fmt_dt(f['first_seen'])} -> "
-                 f"{fmt_dt(f['last_seen'])}")
+            emit(f"  src={f['src_ip']}  user={f['username']}  attempts={f['count']}")
+            emit(f"    window : {fmt_dt(f['first_seen'])} -> {fmt_dt(f['last_seen'])}")
             emit(f"    ports  : {ports}")
 
-    emit(f"\n[2] TRAFFIC ON UNUSUAL PORTS: {len(unusual_ports)}")
+    emit(f"\n[2] DISTRIBUTED BRUTE FORCE: {len(dbf)}")
     emit('-' * 70)
-    if not unusual_ports:
+    if not dbf:
         emit('  (none)')
     else:
-        for u in unusual_ports:
+        for f in dbf:
+            emit(f"  target={f['dst_ip']}:{f['dst_port']}  user={f['username']}  "
+                 f"sources={f['unique_sources']}  attempts={f['total_attempts']}")
+            emit(f"    window : {fmt_dt(f['first_seen'])} -> {fmt_dt(f['last_seen'])}")
+            emit(f"    srcs   : {', '.join(f['sources'][:5])}"
+                 + ('  ...' if len(f['sources']) > 5 else ''))
+
+    emit(f"\n[3] PORT SCANS: {len(ps)}")
+    emit('-' * 70)
+    if not ps:
+        emit('  (none)')
+    else:
+        for f in ps:
+            emit(f"  {f['src_ip']} -> {f['dst_ip']}  unique_ports={f['unique_ports']}")
+            emit(f"    window : {fmt_dt(f['first_seen'])} -> {fmt_dt(f['last_seen'])}")
+            emit(f"    ports  : {', '.join(str(p) for p in f['ports'][:10])}"
+                 + ('  ...' if len(f['ports']) > 10 else ''))
+
+    emit(f"\n[4] TRAFFIC ON UNUSUAL PORTS: {len(up)}")
+    emit('-' * 70)
+    if not up:
+        emit('  (none)')
+    else:
+        for u in up:
             actions = ', '.join(sorted(u['actions']))
             emit(f"  {u['src_ip']} -> {u['dst_ip']}:{u['dst_port']}  "
                  f"count={u['count']}  actions=[{actions}]")
-            emit(f"    first : {fmt_dt(u['first_seen'])}")
-            emit(f"    last  : {fmt_dt(u['last_seen'])}")
 
-    emit(f"\n[3] BLOCKLIST HITS: {len(bad_ips)}")
+    emit(f"\n[5] OFF-HOURS SUCCESSFUL LOGINS: {len(oh)}")
     emit('-' * 70)
-    if not bad_ips:
+    if not oh:
         emit('  (none)')
     else:
-        for b in bad_ips:
+        for e in oh:
+            emit(f"  {fmt_dt(e['timestamp'])}  user={e['username']}  "
+                 f"from={e['src_ip']}  port={e['dst_port']}  reason={e['reason']}")
+
+    emit(f"\n[6] BLOCKLIST HITS: {len(bi)}")
+    emit('-' * 70)
+    if not bi:
+        emit('  (none)')
+    else:
+        for b in bi:
             emit(f"  {fmt_dt(b['timestamp'])}  "
                  f"{b['src_ip']} -> {b['dst_ip']}:{b['dst_port']}  "
                  f"{b['action']}  user={b['username']}")
-            emit(f"    matched: {b['matched_ip']} "
-                 f"({b['matched_network']})  direction={b['match_direction']}")
+            emit(f"    matched: {b['matched_ip']} ({b['matched_network']})  "
+                 f"direction={b['match_direction']}")
 
-    total = len(brute_force) + len(unusual_ports) + len(bad_ips)
+    total = len(bf) + len(dbf) + len(ps) + len(up) + len(oh) + len(bi)
     emit('\n' + '=' * 70)
-    emit(f"  SUMMARY: {total} total findings "
-         f"({len(brute_force)} brute force, "
-         f"{len(unusual_ports)} unusual ports, "
-         f"{len(bad_ips)} blocklist hits)")
+    emit(f"  SUMMARY: {total} total findings")
+    emit(f"    Brute force:            {len(bf)}")
+    emit(f"    Distributed brute force:{len(dbf)}")
+    emit(f"    Port scans:             {len(ps)}")
+    emit(f"    Unusual ports:          {len(up)}")
+    emit(f"    Off-hours logins:       {len(oh)}")
+    emit(f"    Blocklist hits:         {len(bi)}")
     emit('=' * 70)
 
     if output_path:
@@ -288,43 +325,37 @@ def generate_report(brute_force, unusual_ports, bad_ips, log_stats, output_path=
             f.write('\n'.join(lines) + '\n')
         print(f"\n[info] Report also written to {output_path}")
 
-def run_analysis(log_path, blocklist_path, allowed_ports, threshold=5, window_minutes=5, output_path=None):
+def run_analysis(log_path=None, blocklist_path=None, allowed_ports=None, threshold=None, window_minutes=None, output_path=None, config=None):
+    """
+    Top-level orchestrator.
+    If `config` is provided, any arg set to None falls back to the config value.
+    Loads logs, runs all detections, prints report.
+    """
+    if config is None:
+        config = utils.load_config()
+
+    log_path        = log_path        or config['log_path']
+    blocklist_path  = blocklist_path  or config['blocklist_path']
+    allowed_ports   = allowed_ports   or set(config['allowed_ports'])
+    threshold       = threshold       if threshold       is not None else config['brute_force_threshold']
+    window_minutes  = window_minutes  if window_minutes  is not None else config['brute_force_window_minutes']
+    output_path     = output_path     or config['report_output']
+
     log_stats = {}
     logs = load_logs(log_path, stats=log_stats)
     blocklist = load_blocklist(blocklist_path)
-    brute_force = detect_brute_force(logs, threshold=threshold, window_minutes=window_minutes)
-    unusual_ports = detect_unusual_ports(logs, allowed_ports)
-    bad_ips = detect_bad_ips(logs, blocklist)
-    generate_report(brute_force, unusual_ports, bad_ips, log_stats, output_path=output_path)
 
-def _run_self_tests():
-    """Dev-only self-tests. Not part of the public API."""
-    print("=== parse_log_line ===")
-    for t in [
-        '2025-01-15 08:23:11,192.168.1.10,10.0.0.5,22,FAILED,admin',
-        '',
-        'this is not a log line',
-    ]:
-        print(f'IN : {t!r}\nOUT: {parse_log_line(t)}\n' + '-' * 60)
+    findings = {
+        'brute_force':         detect_brute_force(logs, threshold=threshold, window_minutes=window_minutes),
+        'unusual_ports':       detect_unusual_ports(logs, allowed_ports),
+        'bad_ips':             detect_bad_ips(logs, blocklist),
+        'port_scan':           detect_port_scan(logs),
+        'distributed_bf':      detect_distributed_brute_force(logs),
+        'off_hours':           detect_off_hours_activity(logs),
+    }
 
-    print("\n=== load_blocklist ===")
-    nets = load_blocklist('data/blocklist.txt')
-    print(f"Loaded {len(nets)} networks:")
-    for n in nets:
-        print(f"  {n}")
-
-    print("\n=== full pipeline ===")
-    log_stats = {}
-    logs = load_logs('data/sample.log', stats=log_stats)
-    blocklist = load_blocklist('data/blocklist.txt')
-
-    generate_report(
-        brute_force=detect_brute_force(logs),
-        unusual_ports=detect_unusual_ports(logs, {22, 80, 443, 53, 123}),
-        bad_ips=detect_bad_ips(logs, blocklist),
-        log_stats=log_stats,
-        output_path='data/report.txt',
-    )
+    generate_report(findings, log_stats, output_path=output_path)
+    return findings
 
 def detect_port_scan(logs, port_threshold=10, window_minutes=2):
     """
@@ -479,6 +510,3 @@ def detect_off_hours_activity(logs, work_start=8, work_end=18, allowed_days=None
 
     findings.sort(key=lambda f: f['timestamp'])
     return findings
-
-if __name__ == '__main__':
-    _run_self_tests()
