@@ -1,3 +1,4 @@
+import os
 from datetime import datetime
 
 def fmt_ts(iso_str):
@@ -13,6 +14,22 @@ def fmt_ts(iso_str):
     except (ValueError, TypeError):
         return str(iso_str)
 
+def ensure_dir(path):
+    """
+    Ensure a directory exists. Returns True on success, False on failure.
+    Idempotent: safe to call when the directory already exists.
+    """
+    if not path:
+        print("[warn] ensure_dir called with empty path")
+        return False
+
+    try:
+        os.makedirs(path, exist_ok=True)
+        return True
+    except OSError as e:
+        print(f"[warn] Failed to create directory {path}: {e}")
+        return False
+
 if __name__ == '__main__':
     cases = [
         '2026-09-22T16:20:42',
@@ -25,3 +42,11 @@ if __name__ == '__main__':
     ]
     for c in cases:
         print(f'{c!r:45} -> {fmt_ts(c)!r}')
+
+    print()
+    print('--- ensure_dir smoke test ---')
+    print(ensure_dir('data/test_dir_1/nested/deep'))
+    print(ensure_dir('data/test_dir_1/nested/deep'))
+    print(ensure_dir(''))
+    print(ensure_dir(None))
+    print(ensure_dir('utils.py'))
