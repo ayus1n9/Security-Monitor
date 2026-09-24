@@ -1,0 +1,9 @@
+{
+  "brute_force_threshold": 5,
+  "brute_force_window_minutes": 5,
+  "allowed_ports": [22, 80, 443, 53, 123],
+  "blocklist_path": "data/blocklist.txt",
+  "log_path": "data/sample.log",
+  "incidents_dir": "data/incidents",
+  "report_output": "data/report.txt"
+}

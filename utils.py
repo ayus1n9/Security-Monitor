@@ -2,6 +2,16 @@ import json
 import os
 from datetime import datetime
 
+DEFAULT_CONFIG = {
+    'brute_force_threshold': 5,
+    'brute_force_window_minutes': 5,
+    'allowed_ports': [22, 80, 443, 53, 123],
+    'blocklist_path': 'data/blocklist.txt',
+    'log_path': 'data/sample.log',
+    'incidents_dir': 'data/incidents',
+    'report_output': 'data/report.txt',
+}
+
 def fmt_ts(iso_str):
     """
     Convert an ISO-8601 timestamp string to 'YYYY-MM-DD HH:MM:SS'.
@@ -68,6 +78,18 @@ def save_json(filepath, data):
         print(f"[warn] Failed to write {filepath}: {e}")
         return False
 
+def load_config(path='config.json'):
+    """
+    Load config.json, merging over DEFAULT_CONFIG.
+    Returns a dict. Missing/corrupt file → returns defaults (never None).
+    """
+    loaded = load_json(path)
+    if loaded is None:
+        return dict(DEFAULT_CONFIG)
+
+    merged = {**DEFAULT_CONFIG, **loaded}
+    return merged
+
 if __name__ == '__main__':
     cases = [
         '2026-09-22T16:20:42',
@@ -88,6 +110,7 @@ if __name__ == '__main__':
     print(ensure_dir(''))
     print(ensure_dir(None))
     print(ensure_dir('utils.py'))
+    
     print()
     print('--- load_json / save_json smoke test ---')
     test_data = {'name': 'Test', 'count': 3, 'tags': ['a', 'b']}
@@ -96,6 +119,19 @@ if __name__ == '__main__':
     print('missing:', load_json('data/nope.json'))
     with open('data/bad.json', 'w') as f:
         f.write('{not valid json')
-        
+
     print('corrupt:', load_json('data/bad.json'))
     print('bad data:', save_json('data/test_bad.json', {'bad': {1, 2, 3}}))
+
+    print()
+    print('--- load_config smoke test ---')
+    cfg = load_config('config.json')
+    print('keys:', sorted(cfg.keys()))
+    print('brute_force_threshold:', cfg['brute_force_threshold'])
+    print('allowed_ports:', cfg['allowed_ports'])
+
+    print()
+    print('--- load_config with missing file ---')
+    cfg2 = load_config('nonexistent_config.json')
+    print('fallback brute_force_threshold:', cfg2['brute_force_threshold'])
+    print('fallback allowed_ports:', cfg2['allowed_ports'])
