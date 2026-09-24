@@ -1,0 +1,157 @@
+"""
+Unit tests for log_analyzer.py.
+Run: python3 -m pytest tests/ -v
+"""
+
+import pytest
+from datetime import datetime
+
+from log_analyzer import (
+    parse_log_line,
+    detect_brute_force,
+    detect_unusual_ports,
+    detect_bad_ips,
+)
+
+def make_entry(ts_str, src, dst, port, action='FAILED', user='root'):
+    """Build a log entry dict the way parse_log_line would."""
+    return {
+        'timestamp': datetime.strptime(ts_str, '%Y-%m-%d %H:%M:%S'),
+        'src_ip': src,
+        'dst_ip': dst,
+        'dst_port': port,
+        'action': action,
+        'username': user,
+    }
+
+def test_parse_valid_line():
+    line = '2025-01-15 08:23:11,192.168.1.10,10.0.0.5,22,FAILED,admin'
+    result = parse_log_line(line)
+    assert result is not None
+    assert result['src_ip'] == '192.168.1.10'
+    assert result['dst_ip'] == '10.0.0.5'
+    assert result['dst_port'] == 22
+    assert result['action'] == 'FAILED'
+    assert result['username'] == 'admin'
+    assert isinstance(result['timestamp'], datetime)
+
+def test_parse_empty_line_returns_none():
+    assert parse_log_line('') is None
+
+def test_parse_garbage_returns_none():
+    assert parse_log_line('this is not a log line') is None
+
+def test_parse_bad_timestamp_returns_none():
+    line = '2025-99-15 08:23:11,192.168.1.10,10.0.0.5,22,FAILED,admin'
+    assert parse_log_line(line) is None
+
+def test_brute_force_fires_above_threshold():
+    logs = [
+        make_entry('2025-01-15 08:30:01', '1.2.3.4', '10.0.0.5', 22),
+        make_entry('2025-01-15 08:30:18', '1.2.3.4', '10.0.0.5', 22),
+        make_entry('2025-01-15 08:30:41', '1.2.3.4', '10.0.0.5', 22),
+        make_entry('2025-01-15 08:31:02', '1.2.3.4', '10.0.0.5', 22),
+        make_entry('2025-01-15 08:31:44', '1.2.3.4', '10.0.0.5', 22),
+    ]
+    findings = detect_brute_force(logs, threshold=5, window_minutes=5)
+    assert len(findings) == 1
+    assert findings[0]['src_ip'] == '1.2.3.4'
+    assert findings[0]['count'] == 5
+
+def test_brute_force_ignores_below_threshold():
+    logs = [
+        make_entry('2025-01-15 08:30:01', '1.2.3.4', '10.0.0.5', 22),
+        make_entry('2025-01-15 08:30:18', '1.2.3.4', '10.0.0.5', 22),
+        make_entry('2025-01-15 08:30:41', '1.2.3.4', '10.0.0.5', 22),
+    ]
+    findings = detect_brute_force(logs, threshold=5, window_minutes=5)
+    assert findings == []
+
+def test_brute_force_respects_window():
+    logs = [
+        make_entry('2025-01-15 08:30:01', '1.2.3.4', '10.0.0.5', 22),
+        make_entry('2025-01-15 08:35:01', '1.2.3.4', '10.0.0.5', 22),
+        make_entry('2025-01-15 08:40:01', '1.2.3.4', '10.0.0.5', 22),
+        make_entry('2025-01-15 08:45:01', '1.2.3.4', '10.0.0.5', 22),
+        make_entry('2025-01-15 08:50:01', '1.2.3.4', '10.0.0.5', 22),
+    ]
+    findings = detect_brute_force(logs, threshold=5, window_minutes=5)
+    assert findings == []
+
+def test_brute_force_ignores_success():
+    logs = [
+        make_entry('2025-01-15 08:30:01', '1.2.3.4', '10.0.0.5', 22, action='SUCCESS'),
+        make_entry('2025-01-15 08:30:18', '1.2.3.4', '10.0.0.5', 22, action='SUCCESS'),
+        make_entry('2025-01-15 08:30:41', '1.2.3.4', '10.0.0.5', 22, action='SUCCESS'),
+        make_entry('2025-01-15 08:31:02', '1.2.3.4', '10.0.0.5', 22, action='SUCCESS'),
+        make_entry('2025-01-15 08:31:44', '1.2.3.4', '10.0.0.5', 22, action='SUCCESS'),
+    ]
+    findings = detect_brute_force(logs, threshold=5, window_minutes=5)
+    assert findings == []
+
+def test_unusual_ports_flags_non_allowed():
+    logs = [
+        make_entry('2025-01-15 08:30:01', '1.2.3.4', '10.0.0.5', 31337),
+    ]
+    findings = detect_unusual_ports(logs, allowed_ports={22, 80, 443})
+    assert len(findings) == 1
+    assert findings[0]['dst_port'] == 31337
+    assert findings[0]['count'] == 1
+
+
+def test_unusual_ports_ignores_allowed():
+    logs = [
+        make_entry('2025-01-15 08:30:01', '1.2.3.4', '10.0.0.5', 443),
+        make_entry('2025-01-15 08:30:02', '1.2.3.4', '10.0.0.5', 80),
+    ]
+    findings = detect_unusual_ports(logs, allowed_ports={22, 80, 443})
+    assert findings == []
+
+
+def test_unusual_ports_aggregates_by_flow():
+    logs = [
+        make_entry('2025-01-15 08:30:01', '1.2.3.4', '10.0.0.5', 31337),
+        make_entry('2025-01-15 08:30:02', '1.2.3.4', '10.0.0.5', 31337),
+        make_entry('2025-01-15 08:30:03', '1.2.3.4', '10.0.0.5', 31337),
+    ]
+    findings = detect_unusual_ports(logs, allowed_ports={22, 80, 443})
+    assert len(findings) == 1
+    assert findings[0]['count'] == 3
+
+def test_bad_ips_single_match_src():
+    import ipaddress
+    blocklist = [ipaddress.ip_network('203.0.113.5/32')]
+    logs = [
+        make_entry('2025-01-15 08:30:01', '203.0.113.5', '10.0.0.5', 22),
+    ]
+    findings = detect_bad_ips(logs, blocklist)
+    assert len(findings) == 1
+    assert findings[0]['match_direction'] == 'src'
+    assert findings[0]['matched_ip'] == '203.0.113.5'
+
+
+def test_bad_ips_cidr_match():
+    import ipaddress
+    blocklist = [ipaddress.ip_network('10.0.0.0/8')]
+    logs = [
+        make_entry('2025-01-15 08:30:01', '1.2.3.4', '10.5.5.5', 443),
+    ]
+    findings = detect_bad_ips(logs, blocklist)
+    assert len(findings) == 1
+    assert findings[0]['match_direction'] == 'dst'
+
+
+def test_bad_ips_empty_blocklist():
+    logs = [
+        make_entry('2025-01-15 08:30:01', '1.2.3.4', '10.0.0.5', 443),
+    ]
+    assert detect_bad_ips(logs, []) == []
+
+
+def test_bad_ips_no_match():
+    import ipaddress
+    blocklist = [ipaddress.ip_network('203.0.113.5/32')]
+    logs = [
+        make_entry('2025-01-15 08:30:01', '1.2.3.4', '10.0.0.5', 443),
+    ]
+    assert detect_bad_ips(logs, blocklist) == []
