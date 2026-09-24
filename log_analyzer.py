@@ -326,5 +326,59 @@ def _run_self_tests():
         output_path='data/report.txt',
     )
 
+def detect_port_scan(logs, port_threshold=10, window_minutes=2):
+    """
+    Flag (src_ip, dst_ip) pairs where src hits >= port_threshold
+    unique destination ports inside any window_minutes sliding window.
+    Returns findings sorted by unique_ports descending.
+    """
+    if not logs:
+        return []
+
+    buckets = defaultdict(list)
+    for entry in logs:
+        key = (entry['src_ip'], entry['dst_ip'])
+        buckets[key].append(entry)
+
+    window = timedelta(minutes=window_minutes)
+    findings = []
+
+    for (src_ip, dst_ip), events in buckets.items():
+        events.sort(key=lambda e: e['timestamp'])
+
+        start = 0
+        n = len(events)
+        best_unique = 0
+        best_first = None
+        best_last = None
+        best_ports = set()
+
+        for end in range(n):
+            while events[end]['timestamp'] - events[start]['timestamp'] > window:
+                start += 1
+
+            window_events = events[start:end + 1]
+            unique_ports = {e['dst_port'] for e in window_events}
+
+            if len(unique_ports) > best_unique:
+                best_unique = len(unique_ports)
+                best_first = events[start]['timestamp']
+                best_last = events[end]['timestamp']
+                best_ports = unique_ports
+
+        if best_unique >= port_threshold:
+            findings.append({
+                'src_ip': src_ip,
+                'dst_ip': dst_ip,
+                'unique_ports': best_unique,
+                'first_seen': best_first,
+                'last_seen': best_last,
+                'ports': sorted(best_ports),
+                'actions': {e['action'] for e in events},
+            })
+
+    findings.sort(key=lambda f: f['unique_ports'], reverse=True)
+    return findings
+
 if __name__ == '__main__':
     _run_self_tests()

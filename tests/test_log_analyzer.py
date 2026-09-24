@@ -11,6 +11,7 @@ from log_analyzer import (
     detect_brute_force,
     detect_unusual_ports,
     detect_bad_ips,
+    detect_port_scan,
 )
 
 def make_entry(ts_str, src, dst, port, action='FAILED', user='root'):
@@ -155,3 +156,46 @@ def test_bad_ips_no_match():
         make_entry('2025-01-15 08:30:01', '1.2.3.4', '10.0.0.5', 443),
     ]
     assert detect_bad_ips(logs, blocklist) == []
+
+def test_port_scan_fires_above_threshold():
+    logs = [
+        make_entry('2025-01-15 08:30:01', '1.2.3.4', '10.0.0.5', 22),
+        make_entry('2025-01-15 08:30:05', '1.2.3.4', '10.0.0.5', 80),
+        make_entry('2025-01-15 08:30:09', '1.2.3.4', '10.0.0.5', 443),
+        make_entry('2025-01-15 08:30:14', '1.2.3.4', '10.0.0.5', 8080),
+        make_entry('2025-01-15 08:30:20', '1.2.3.4', '10.0.0.5', 3389),
+    ]
+    findings = detect_port_scan(logs, port_threshold=5, window_minutes=2)
+    assert len(findings) == 1
+    assert findings[0]['unique_ports'] == 5
+    assert findings[0]['src_ip'] == '1.2.3.4'
+    assert findings[0]['ports'] == sorted([22, 80, 443, 8080, 3389])
+
+def test_port_scan_ignores_repeat_port():
+    logs = [
+        make_entry(f'2025-01-15 08:30:{i:02d}', '1.2.3.4', '10.0.0.5', 22)
+        for i in range(10)
+    ]
+    assert detect_port_scan(logs, port_threshold=5, window_minutes=2) == []
+
+def test_port_scan_respects_window():
+    logs = [
+        make_entry('2025-01-15 08:00:00', '1.2.3.4', '10.0.0.5', 22),
+        make_entry('2025-01-15 08:10:00', '1.2.3.4', '10.0.0.5', 80),
+        make_entry('2025-01-15 08:20:00', '1.2.3.4', '10.0.0.5', 443),
+        make_entry('2025-01-15 08:30:00', '1.2.3.4', '10.0.0.5', 8080),
+        make_entry('2025-01-15 08:40:00', '1.2.3.4', '10.0.0.5', 3389),
+    ]
+    assert detect_port_scan(logs, port_threshold=5, window_minutes=2) == []
+
+def test_port_scan_separates_targets():
+    logs = [
+        make_entry('2025-01-15 08:30:01', '1.2.3.4', '10.0.0.5', 22),
+        make_entry('2025-01-15 08:30:02', '1.2.3.4', '10.0.0.5', 80),
+        make_entry('2025-01-15 08:30:03', '1.2.3.4', '10.0.0.5', 443),
+        make_entry('2025-01-15 08:30:04', '1.2.3.4', '10.0.0.6', 22),
+        make_entry('2025-01-15 08:30:05', '1.2.3.4', '10.0.0.6', 80),
+        make_entry('2025-01-15 08:30:06', '1.2.3.4', '10.0.0.6', 443),
+    ]
+    findings = detect_port_scan(logs, port_threshold=3, window_minutes=2)
+    assert len(findings) == 2
