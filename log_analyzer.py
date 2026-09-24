@@ -442,5 +442,43 @@ def detect_distributed_brute_force(logs, src_threshold=5, window_minutes=5):
     findings.sort(key=lambda f: f['unique_sources'], reverse=True)
     return findings
 
+def detect_off_hours_activity(logs, work_start=8, work_end=18, allowed_days=None):
+    """
+    Flag successful logins outside business hours.
+    work_start/work_end: hours (0-23); work_start inclusive, work_end exclusive.
+    allowed_days: set of weekday numbers (Mon=0..Sun=6), or None for all days.
+    Returns findings sorted chronologically.
+    """
+    if not logs:
+        return []
+
+    findings = []
+    for entry in logs:
+        if entry['action'] != 'SUCCESS':
+            continue
+
+        ts = entry['timestamp']
+        reason = None
+
+        if allowed_days is not None and ts.weekday() not in allowed_days:
+            reason = 'weekend'
+        elif ts.hour < work_start or ts.hour >= work_end:
+            reason = 'after-hours'
+
+        if reason is None:
+            continue
+
+        findings.append({
+            'timestamp': ts,
+            'src_ip': entry['src_ip'],
+            'dst_ip': entry['dst_ip'],
+            'dst_port': entry['dst_port'],
+            'username': entry['username'],
+            'reason': reason,
+        })
+
+    findings.sort(key=lambda f: f['timestamp'])
+    return findings
+
 if __name__ == '__main__':
     _run_self_tests()

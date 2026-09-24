@@ -13,6 +13,7 @@ from log_analyzer import (
     detect_bad_ips,
     detect_port_scan,
     detect_distributed_brute_force,
+    detect_off_hours_activity,
 )
 
 def make_entry(ts_str, src, dst, port, action='FAILED', user='root'):
@@ -244,3 +245,48 @@ def test_distributed_brute_force_separates_usernames():
     assert len(findings) == 2
     usernames = {f['username'] for f in findings}
     assert usernames == {'root', 'admin'}
+
+def test_off_hours_flags_after_hours_success():
+    logs = [
+        make_entry('2025-01-15 03:14:22', '1.2.3.4', '10.0.0.5', 22,
+                   action='SUCCESS', user='alice'),
+    ]
+    findings = detect_off_hours_activity(logs, work_start=8, work_end=18)
+    assert len(findings) == 1
+    assert findings[0]['reason'] == 'after-hours'
+    assert findings[0]['username'] == 'alice'
+
+def test_off_hours_ignores_in_hours_success():
+    logs = [
+        make_entry('2025-01-15 10:30:00', '1.2.3.4', '10.0.0.5', 22,
+                   action='SUCCESS', user='alice'),
+    ]
+    assert detect_off_hours_activity(logs, work_start=8, work_end=18) == []
+
+def test_off_hours_ignores_failed():
+    logs = [
+        make_entry('2025-01-15 03:14:22', '1.2.3.4', '10.0.0.5', 22,
+                   action='FAILED', user='alice'),
+    ]
+    assert detect_off_hours_activity(logs, work_start=8, work_end=18) == []
+
+def test_off_hours_weekend_with_allowed_days():
+    logs = [
+        make_entry('2025-01-18 14:00:00', '1.2.3.4', '10.0.0.5', 22,
+                   action='SUCCESS', user='alice'),
+    ]
+    findings = detect_off_hours_activity(
+        logs, work_start=8, work_end=18, allowed_days={0, 1, 2, 3, 4})
+    assert len(findings) == 1
+    assert findings[0]['reason'] == 'weekend'
+
+def test_off_hours_boundary_hours():
+    logs = [
+        make_entry('2025-01-15 08:00:00', '1.2.3.4', '10.0.0.5', 22,
+                   action='SUCCESS', user='a'),
+        make_entry('2025-01-15 18:00:00', '1.2.3.5', '10.0.0.5', 22,
+                   action='SUCCESS', user='b'),
+    ]
+    findings = detect_off_hours_activity(logs, work_start=8, work_end=18)
+    assert len(findings) == 1
+    assert findings[0]['username'] == 'b'
