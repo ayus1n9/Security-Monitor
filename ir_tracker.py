@@ -460,6 +460,114 @@ def ir_menu():
         print("\n  [interrupted] Exiting IR tracker.")
         return
 
+SEVERITY_RANK = {'low': 0, 'medium': 1, 'high': 2, 'critical': 3}
+
+
+def _auto_severity(findings):
+    """
+    Assign an incident severity from the findings dict.
+    Highest tier wins. Returns one of 'low','medium','high','critical'.
+    """
+    severity = 'low'
+
+    def escalate(new_level):
+        nonlocal severity
+        if SEVERITY_RANK[new_level] > SEVERITY_RANK[severity]:
+            severity = new_level
+
+    if findings.get('distributed_bf'):
+        escalate('critical')
+    if findings.get('port_scan'):
+        escalate('critical')
+    if findings.get('brute_force'):
+        escalate('high')
+    if findings.get('off_hours'):
+        escalate('high')
+    if findings.get('unusual_ports'):
+        escalate('medium')
+    if findings.get('bad_ips'):
+        escalate('medium')
+
+    return severity
+
+
+def _summarize_brute_force(items):
+    parts = []
+    for f in items[:3]:
+        parts.append(f"{f['src_ip']} user={f['username']} attempts={f['count']}")
+    tail = ' ...' if len(items) > 3 else ''
+    return f"Brute force: {len(items)} source(s) — " + '; '.join(parts) + tail
+
+
+def _summarize_distributed_bf(items):
+    parts = []
+    for f in items[:3]:
+        parts.append(f"{f['dst_ip']}:{f['dst_port']} user={f['username']} "
+                     f"sources={f['unique_sources']}")
+    tail = ' ...' if len(items) > 3 else ''
+    return f"Distributed brute force: {len(items)} target(s) — " + '; '.join(parts) + tail
+
+
+def _summarize_port_scan(items):
+    parts = []
+    for f in items[:3]:
+        parts.append(f"{f['src_ip']} -> {f['dst_ip']} ({f['unique_ports']} ports)")
+    tail = ' ...' if len(items) > 3 else ''
+    return f"Port scan(s): {len(items)} — " + '; '.join(parts) + tail
+
+
+def _summarize_unusual_ports(items):
+    parts = []
+    for f in items[:3]:
+        parts.append(f"{f['src_ip']} -> {f['dst_ip']}:{f['dst_port']}")
+    tail = ' ...' if len(items) > 3 else ''
+    return f"Unusual ports: {len(items)} flow(s) — " + '; '.join(parts) + tail
+
+
+def _summarize_off_hours(items):
+    parts = []
+    for f in items[:3]:
+        parts.append(f"{f['username']}@{f['src_ip']} ({f['reason']})")
+    tail = ' ...' if len(items) > 3 else ''
+    return f"Off-hours logins: {len(items)} — " + '; '.join(parts) + tail
+
+
+def _summarize_bad_ips(items):
+    srcs = sorted({f['matched_ip'] for f in items})
+    return (f"Blocklist hits: {len(items)} event(s) from "
+            + ', '.join(srcs[:5])
+            + (' ...' if len(srcs) > 5 else ''))
+
+
+_SUMMARIZERS = [
+    ('distributed_bf', _summarize_distributed_bf),
+    ('port_scan',      _summarize_port_scan),
+    ('brute_force',    _summarize_brute_force),
+    ('off_hours',      _summarize_off_hours),
+    ('unusual_ports',  _summarize_unusual_ports),
+    ('bad_ips',        _summarize_bad_ips),
+]
+
+
+def create_incident_from_findings(findings, name, severity=None):
+    """
+    Create an IR incident pre-populated with a summary action per
+    detection category. Severity is auto-assigned from findings unless
+    overridden.
+    Returns the incident dict.
+    """
+    if severity is None:
+        severity = _auto_severity(findings)
+
+    incident = create_incident(name, severity=severity, status='open')
+
+    for key, summarizer in _SUMMARIZERS:
+        items = findings.get(key) or []
+        if not items:
+            continue
+        add_action(incident, 'Detection/Analysis', summarizer(items))
+
+    return incident
 
 if __name__ == '__main__':
     ir_menu()

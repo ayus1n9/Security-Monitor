@@ -17,6 +17,8 @@ from ir_tracker import (
     add_action,
     list_incidents,
     view_incident,
+    create_incident_from_findings,
+    _auto_severity
 )
 
 @pytest.fixture(autouse=True)
@@ -179,3 +181,53 @@ def test_list_includes_metadata():
     assert len(summaries) == 1
     assert summaries[0]['severity'] == 'high'
     assert summaries[0]['status'] == 'open'
+
+
+def test_auto_severity_critical_on_port_scan():
+    findings = {'port_scan': [{'src_ip': '1.1.1.1'}]}
+    assert _auto_severity(findings) == 'critical'
+
+
+def test_auto_severity_high_on_brute_force():
+    findings = {'brute_force': [{'src_ip': '1.1.1.1'}]}
+    assert _auto_severity(findings) == 'high'
+
+
+def test_auto_severity_medium_on_bad_ips_only():
+    findings = {'bad_ips': [{'matched_ip': '2.2.2.2'}]}
+    assert _auto_severity(findings) == 'medium'
+
+
+def test_auto_severity_low_on_empty():
+    assert _auto_severity({}) == 'low'
+
+
+def test_auto_severity_highest_tier_wins():
+    findings = {
+        'port_scan': [{'src_ip': '1.1.1.1'}],
+        'bad_ips': [{'matched_ip': '2.2.2.2'}],
+    }
+    assert _auto_severity(findings) == 'critical'
+
+
+def test_create_from_findings_populates_detection_stage():
+    findings = {
+        'brute_force': [{
+            'src_ip': '1.2.3.4', 'username': 'root',
+            'count': 7, 'first_seen': None, 'last_seen': None,
+            'dst_ports': {22},
+        }],
+    }
+    inc = create_incident_from_findings(findings, "Auto incident")
+    assert inc['severity'] == 'high'
+    detection_entries = inc['stages']['Detection/Analysis']
+    assert len(detection_entries) == 1
+    assert 'Brute force' in detection_entries[0]['action']
+    assert '1.2.3.4' in detection_entries[0]['action']
+
+
+def test_create_from_findings_empty_creates_low_no_actions():
+    inc = create_incident_from_findings({}, "Nothing found")
+    assert inc['severity'] == 'low'
+    for stage in STAGES:
+        assert inc['stages'][stage] == []
