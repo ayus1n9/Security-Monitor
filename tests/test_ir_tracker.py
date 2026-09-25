@@ -95,7 +95,7 @@ def test_add_action_rolls_back_on_save_failure(monkeypatch):
 
     ok = add_action(inc, 'Preparation', 'should roll back')
     assert ok is False
-    assert inc['stages']['Preparation'] == []  # rolled back
+    assert inc['stages']['Preparation'] == []
 
 def test_list_empty_returns_empty_list():
     assert list_incidents() == []
@@ -118,7 +118,7 @@ def test_list_returns_summaries():
 
 def test_view_does_not_crash_empty(capsys):
     inc = create_incident("Empty view")
-    view_incident(inc)  # should not raise
+    view_incident(inc)
     out = capsys.readouterr().out
     assert inc['id'] in out
     assert 'TOTAL ACTIONS LOGGED: 0' in out
@@ -137,3 +137,45 @@ def test_view_shows_entries(capsys):
     assert 'Step one' in out
     assert 'Lessons learned scheduled' in out
     assert 'TOTAL ACTIONS LOGGED: 2' in out
+
+def test_create_incident_default_metadata():
+    inc = create_incident("Defaults test")
+    assert inc['status'] == 'open'
+    assert inc['severity'] == 'low'
+
+
+def test_create_incident_custom_severity():
+    inc = create_incident("Critical case", severity='critical')
+    assert inc['severity'] == 'critical'
+    assert inc['status'] == 'open'
+
+
+def test_create_incident_invalid_severity_falls_back():
+    inc = create_incident("Bad severity", severity='emergency')
+    assert inc['severity'] == 'low'
+
+
+def test_load_migrates_old_incident(isolated_incidents_dir):
+    old = {
+        'id': 'INC-OLD-1',
+        'name': 'Legacy incident',
+        'created': '2025-01-01T10:00:00',
+        'stages': {s: [] for s in STAGES},
+    }
+    path = os.path.join(str(isolated_incidents_dir), 'INC-OLD-1.json')
+    with open(path, 'w') as f:
+        json.dump(old, f)
+
+    loaded = load_incident('INC-OLD-1')
+    assert loaded is not None
+    assert loaded['status'] == 'open'
+    assert loaded['severity'] == 'low'
+    assert loaded['name'] == 'Legacy incident'
+
+
+def test_list_includes_metadata():
+    create_incident("High case", severity='high')
+    summaries = list_incidents()
+    assert len(summaries) == 1
+    assert summaries[0]['severity'] == 'high'
+    assert summaries[0]['status'] == 'open'

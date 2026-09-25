@@ -1,6 +1,7 @@
 import os
 import re
 import uuid
+import json
 from datetime import datetime
 
 from utils import load_json, save_json
@@ -12,16 +13,12 @@ STAGES = [
     'Containment/Eradication/Recovery',
     'Post-Incident',
 ]
-
+STATUSES = ['open', 'closed']
+SEVERITIES = ['low', 'medium', 'high', 'critical']
 INCIDENTS_DIR = 'data/incidents'
-
-# Expected format:
-# INC-YYYYMMDD-HHMMSS-XXXX
-# where XXXX is a 4-character hexadecimal UUID suffix.
 INCIDENT_ID_PATTERN = re.compile(
     r'^INC-\d{8}-\d{6}-[0-9a-f]{4}$'
 )
-
 
 def is_valid_incident_id(incident_id):
     """
@@ -71,41 +68,35 @@ def validate_incident(incident):
     return True
 
 
-def create_incident(name):
+def create_incident(name, severity='low', status='open'):
     """
-    Create a new incident record, save it to disk, and return the dict.
-
-    Returns None if the incident cannot be saved.
+    Create a new incident record, save it to disk, return the dict.
+    Validates severity and status; falls back to defaults on invalid input.
     """
-    if not isinstance(name, str):
-        print("[warn] Incident name must be a string.")
-        return None
-
-    name = name.strip()
-
-    if not name:
-        print("[warn] Incident name cannot be empty.")
-        return None
+    if severity not in SEVERITIES:
+        print(f"[warn] Invalid severity {severity!r}; using 'low'")
+        severity = 'low'
+    if status not in STATUSES:
+        print(f"[warn] Invalid status {status!r}; using 'open'")
+        status = 'open'
 
     now = datetime.now()
-
-    # Timestamp provides readability; UUID suffix prevents collisions
-    # when multiple incidents are created within the same second.
     suffix = uuid.uuid4().hex[:4]
-
-    incident_id = (
-        f"INC-{now.strftime('%Y%m%d-%H%M%S')}-{suffix}"
-    )
+    incident_id = f"INC-{now.strftime('%Y%m%d-%H%M%S')}-{suffix}"
 
     incident = {
         'id': incident_id,
         'name': name,
         'created': now.isoformat(timespec='seconds'),
+        'status': status,
+        'severity': severity,
         'stages': {stage: [] for stage in STAGES},
     }
 
-    if not save_incident(incident):
-        return None
+    os.makedirs(INCIDENTS_DIR, exist_ok=True)
+    path = os.path.join(INCIDENTS_DIR, f"{incident_id}.json")
+    with open(path, 'w') as f:
+        json.dump(incident, f, indent=2, ensure_ascii=False)
 
     return incident
 
@@ -113,33 +104,23 @@ def create_incident(name):
 def load_incident(incident_id):
     """
     Load an incident from disk by ID.
-
-    Returns None if:
-    - the ID is invalid,
-    - the file does not exist,
-    - the JSON is corrupt,
-    - or the incident structure is invalid.
+    Backfills status/severity for old-format incidents (lazy migration).
+    Returns None if the file is missing or corrupt.
     """
-    if not is_valid_incident_id(incident_id):
-        print(f"[warn] Invalid incident ID: {incident_id!r}")
-        return None
-
     path = os.path.join(INCIDENTS_DIR, f"{incident_id}.json")
-
-    incident = load_json(path)
-
-    if incident is None:
+    if not os.path.exists(path):
+        print(f"[warn] Incident not found: {incident_id}")
         return None
 
-    if not validate_incident(incident):
-        print(f"[warn] Invalid incident structure: {path}")
+    try:
+        with open(path, 'r') as f:
+            incident = json.load(f)
+    except json.JSONDecodeError:
+        print(f"[warn] Corrupt incident file: {path}")
         return None
 
-    # Ensure the filename ID and JSON object's ID agree.
-    if incident.get('id') != incident_id:
-        print(f"[warn] Incident ID mismatch: {path}")
-        return None
-
+    incident.setdefault('status', 'open')
+    incident.setdefault('severity', 'low')
     return incident
 
 
@@ -235,13 +216,10 @@ def view_incident(incident):
             return str(iso_str)
 
     print('=' * 70)
-    print(
-        f"  Incident: {incident.get('id', '?')}  —  "
-        f"{incident.get('name', '(unnamed)')}"
-    )
-    print(
-        f"  Created : {fmt_ts(incident.get('created', ''))}"
-    )
+    print(f"  Incident: {incident.get('id', '?')}  —  {incident.get('name', '(unnamed)')}")
+    print(f"  Created : {fmt_ts(incident.get('created', ''))}")
+    print(f"  Status  : {incident.get('status', 'open').upper()}")
+    print(f"  Severity: {incident.get('severity', 'low').upper()}")
     print('=' * 70)
 
     stages = incident.get('stages', {})
@@ -308,8 +286,6 @@ def list_incidents():
             continue
 
         incident_id = filename[:-len('.json')]
-
-        # load_incident() performs strict ID validation.
         incident = load_incident(incident_id)
 
         if incident is None:
@@ -329,9 +305,11 @@ def list_incidents():
         total_actions = sum(stage_counts.values())
 
         summaries.append({
-            'id': incident['id'],
-            'name': incident['name'],
-            'created': incident['created'],
+            'id': incident.get('id', incident_id),
+            'name': incident.get('name', '(unnamed)'),
+            'created': incident.get('created', ''),
+            'status': incident.get('status', 'open'),
+            'severity': incident.get('severity', 'low'),
             'total_actions': total_actions,
             'stage_counts': stage_counts,
         })
@@ -360,10 +338,9 @@ def ir_menu():
             print()
 
             if current:
-                print(
-                    f"Current incident: "
-                    f"{current['id']} — {current['name']}"
-                )
+                print(f"Current incident: {current['id']} — {current['name']}")
+                print(f"  Status: {current.get('status', 'open').upper()}  "
+                    f"Severity: {current.get('severity', 'low').upper()}")
             else:
                 print("Current incident: (none loaded)")
 
