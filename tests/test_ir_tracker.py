@@ -20,6 +20,8 @@ from ir_tracker import (
     create_incident_from_findings,
     _auto_severity
 )
+from ir_tracker import link_report_to_incident
+
 
 @pytest.fixture(autouse=True)
 def isolated_incidents_dir(tmp_path, monkeypatch):
@@ -231,3 +233,41 @@ def test_create_from_findings_empty_creates_low_no_actions():
     assert inc['severity'] == 'low'
     for stage in STAGES:
         assert inc['stages'][stage] == []
+
+
+def test_link_report_copies_and_logs(isolated_incidents_dir):
+    inc = create_incident("Link test")
+
+    report_path = os.path.join(str(isolated_incidents_dir), 'sample_report.txt')
+    with open(report_path, 'w') as f:
+        f.write("FAKE REPORT CONTENT")
+
+    ok = link_report_to_incident(inc, report_path)
+    assert ok is True
+
+    prep = inc['stages']['Preparation']
+    assert len(prep) == 1
+    assert 'Attached evidence' in prep[0]['action']
+
+    evidence_dir = os.path.join(str(isolated_incidents_dir), f"{inc['id']}_evidence")
+    assert os.path.isdir(evidence_dir)
+    copied = os.listdir(evidence_dir)
+    assert len(copied) == 1
+    assert copied[0].endswith('sample_report.txt')
+
+
+def test_link_report_missing_file_returns_false(isolated_incidents_dir):
+    inc = create_incident("Missing report")
+    ok = link_report_to_incident(inc, 'nonexistent.txt')
+    assert ok is False
+    assert inc['stages']['Preparation'] == []
+
+
+def test_link_report_no_id_returns_false():
+    ok = link_report_to_incident({'name': 'no id'}, 'whatever.txt')
+    assert ok is False
+
+
+def test_link_report_none_incident_returns_false():
+    ok = link_report_to_incident(None, 'whatever.txt')
+    assert ok is False

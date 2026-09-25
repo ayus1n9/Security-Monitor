@@ -1,9 +1,10 @@
-import os
-import re
-import uuid
 import json
+import os
+import shutil
+import uuid
+import re
 from datetime import datetime
-
+import utils
 from utils import load_json, save_json
 
 
@@ -568,6 +569,39 @@ def create_incident_from_findings(findings, name, severity=None):
         add_action(incident, 'Detection/Analysis', summarizer(items))
 
     return incident
+
+
+def link_report_to_incident(incident, report_path):
+    """
+    Copy a report file into the incident's evidence directory and log
+    a Preparation action. Returns True on success, False on failure.
+    """
+    if not incident or not incident.get('id'):
+        print("[warn] Cannot link report: incident missing 'id'")
+        return False
+
+    if not os.path.exists(report_path):
+        print(f"[warn] Report file not found: {report_path}")
+        return False
+
+    incident_id = incident['id']
+    evidence_dir = os.path.join(INCIDENTS_DIR, f"{incident_id}_evidence")
+    if not utils.ensure_dir(evidence_dir):
+        return False
+
+    timestamp_prefix = datetime.now().strftime('%Y%m%d-%H%M%S')
+    dest_name = f"{timestamp_prefix}_{os.path.basename(report_path)}"
+    dest_path = os.path.join(evidence_dir, dest_name)
+
+    try:
+        shutil.copy2(report_path, dest_path)
+    except OSError as e:
+        print(f"[warn] Failed to copy report: {e}")
+        return False
+
+    action = f"Attached evidence: {dest_name}"
+    notes = f"Source: {report_path}"
+    return add_action(incident, 'Preparation', action, notes=notes)
 
 if __name__ == '__main__':
     ir_menu()
