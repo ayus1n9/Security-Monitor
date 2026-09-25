@@ -45,6 +45,13 @@ def test_create_incident_writes_file(isolated_incidents_dir):
     assert on_disk['id'] == inc['id']
     assert on_disk['name'] == "File test"
 
+def test_create_incident_returns_none_on_save_failure(monkeypatch):
+    monkeypatch.setattr(ir_tracker, 'save_json', lambda *args, **kwargs: False)
+
+    incident = create_incident("Save failure")
+
+    assert incident is None
+
 def test_create_incident_stages_in_order():
     """The four stages must be present AND in the guide's order."""
     inc = create_incident("Order test")
@@ -161,16 +168,16 @@ def test_create_incident_invalid_severity_falls_back():
 
 def test_load_migrates_old_incident(isolated_incidents_dir):
     old = {
-        'id': 'INC-OLD-1',
+        'id': 'INC-20250101-100000-abcd',
         'name': 'Legacy incident',
         'created': '2025-01-01T10:00:00',
         'stages': {s: [] for s in STAGES},
     }
-    path = os.path.join(str(isolated_incidents_dir), 'INC-OLD-1.json')
+    path = os.path.join(str(isolated_incidents_dir), 'INC-20250101-100000-abcd.json')
     with open(path, 'w') as f:
         json.dump(old, f)
 
-    loaded = load_incident('INC-OLD-1')
+    loaded = load_incident('INC-20250101-100000-abcd')
     assert loaded is not None
     assert loaded['status'] == 'open'
     assert loaded['severity'] == 'low'
@@ -271,3 +278,27 @@ def test_link_report_no_id_returns_false():
 def test_link_report_none_incident_returns_false():
     ok = link_report_to_incident(None, 'whatever.txt')
     assert ok is False
+
+def test_load_rejects_path_traversal():
+    assert load_incident('../../evil') is None
+
+def test_load_rejects_invalid_incident_id():
+    assert load_incident('INC-BAD-1') is None
+
+def test_load_invalid_structure_returns_none(isolated_incidents_dir):
+    incident_id = 'INC-20260925-120000-abcd'
+
+    path = os.path.join(
+        str(isolated_incidents_dir),
+        f'{incident_id}.json'
+    )
+
+    with open(path, 'w') as f:
+        json.dump({
+            'id': incident_id,
+            'name': 123,
+            'created': '2026-09-25T12:00:00',
+            'stages': {}
+        }, f)
+
+    assert load_incident(incident_id) is None

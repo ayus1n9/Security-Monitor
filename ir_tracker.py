@@ -57,7 +57,7 @@ def validate_incident(incident):
     stages = incident.get('stages')
     if not isinstance(stages, dict):
         return False
-
+    
     # Every expected stage must exist and contain a list.
     for stage in STAGES:
         if stage not in stages:
@@ -94,10 +94,14 @@ def create_incident(name, severity='low', status='open'):
         'stages': {stage: [] for stage in STAGES},
     }
 
-    os.makedirs(INCIDENTS_DIR, exist_ok=True)
-    path = os.path.join(INCIDENTS_DIR, f"{incident_id}.json")
-    with open(path, 'w') as f:
-        json.dump(incident, f, indent=2, ensure_ascii=False)
+    path = os.path.join(
+        INCIDENTS_DIR,
+        f"{incident_id}.json"
+    )
+
+    if not save_json(path, incident):
+        print(f"[warn] Failed to save incident: {incident_id}")
+        return None
 
     return incident
 
@@ -108,20 +112,36 @@ def load_incident(incident_id):
     Backfills status/severity for old-format incidents (lazy migration).
     Returns None if the file is missing or corrupt.
     """
+    if not is_valid_incident_id(incident_id):
+        print(f"[warn] Invalid incident ID: {incident_id!r}")
+        return None
+
     path = os.path.join(INCIDENTS_DIR, f"{incident_id}.json")
+
     if not os.path.exists(path):
         print(f"[warn] Incident not found: {incident_id}")
         return None
 
     try:
-        with open(path, 'r') as f:
+        with open(path, 'r', encoding='utf-8') as f:
             incident = json.load(f)
+    except FileNotFoundError:
+        print(f"[warn] Incident not found: {incident_id}")
+        return None
     except json.JSONDecodeError:
         print(f"[warn] Corrupt incident file: {path}")
+        return None
+    except (OSError, UnicodeError) as e:
+        print(f"[warn] Failed to read incident: {e}")
         return None
 
     incident.setdefault('status', 'open')
     incident.setdefault('severity', 'low')
+
+    if not validate_incident(incident):
+        print(f"[warn] Invalid incident structure: {incident_id!r}")
+        return None
+
     return incident
 
 
@@ -576,8 +596,8 @@ def link_report_to_incident(incident, report_path):
     Copy a report file into the incident's evidence directory and log
     a Preparation action. Returns True on success, False on failure.
     """
-    if not incident or not incident.get('id'):
-        print("[warn] Cannot link report: incident missing 'id'")
+    if not validate_incident(incident):
+        print("[warn] Cannot link report: invalid incident data.")
         return False
 
     if not os.path.exists(report_path):
