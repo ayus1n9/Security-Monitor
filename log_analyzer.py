@@ -1,3 +1,5 @@
+import os
+import time
 import ipaddress
 import utils
 import re
@@ -517,3 +519,149 @@ def detect_off_hours_activity(logs, work_start=8, work_end=18, allowed_days=None
 
     findings.sort(key=lambda f: f['timestamp'])
     return findings
+
+def _finding_fingerprint(kind, finding):
+    """
+    Return a hashable key that uniquely identifies a finding.
+    Used to suppress duplicate alerts across watch ticks.
+    """
+    if kind == 'brute_force':
+        return ('bf', finding['src_ip'], finding['username'])
+    if kind == 'distributed_bf':
+        return ('dbf', finding['dst_ip'], finding['dst_port'], finding['username'])
+    if kind == 'port_scan':
+        return ('ps', finding['src_ip'], finding['dst_ip'])
+    if kind == 'off_hours':
+        return ('oh', finding['src_ip'], finding['username'],
+                finding['timestamp'])
+    if kind == 'unusual_ports':
+        return ('up', finding['src_ip'], finding['dst_ip'], finding['dst_port'])
+    if kind == 'bad_ips':
+        return ('bi', finding['matched_ip'],
+                finding['src_ip'], finding['dst_ip'])
+    return (kind, repr(finding))
+
+
+def _print_alert(kind, finding):
+    """Format and print a single watch alert."""
+    labels = {
+        'brute_force':    'BRUTE FORCE',
+        'distributed_bf': 'DISTRIBUTED BRUTE FORCE',
+        'port_scan':      'PORT SCAN',
+        'off_hours':      'OFF-HOURS LOGIN',
+        'unusual_ports':  'UNUSUAL PORT',
+        'bad_ips':        'BLOCKLIST HIT',
+    }
+    label = labels.get(kind, kind.upper())
+    ts = datetime.now().strftime('%H:%M:%S')
+
+    if kind == 'brute_force':
+        detail = (f"{finding['src_ip']} user={finding['username']} "
+                  f"attempts={finding['count']}")
+    elif kind == 'distributed_bf':
+        detail = (f"target={finding['dst_ip']}:{finding['dst_port']} "
+                  f"sources={finding['unique_sources']}")
+    elif kind == 'port_scan':
+        detail = (f"{finding['src_ip']} -> {finding['dst_ip']} "
+                  f"({finding['unique_ports']} ports)")
+    elif kind == 'off_hours':
+        detail = (f"{finding['username']}@{finding['src_ip']} "
+                  f"({finding['reason']})")
+    elif kind == 'unusual_ports':
+        detail = (f"{finding['src_ip']} -> {finding['dst_ip']}:"
+                  f"{finding['dst_port']}")
+    elif kind == 'bad_ips':
+        detail = (f"{finding['src_ip']} -> {finding['dst_ip']} "
+                  f"({finding['matched_network']})")
+    else:
+        detail = str(finding)
+
+    print(f"[{ts}] [{label}] {detail}")
+
+
+def watch_log(log_path, blocklist_path=None, allowed_ports=None,
+              poll_interval=2.0, lookback_minutes=10,
+              threshold=5, window_minutes=5,
+              from_start=False, max_ticks=None):
+    """
+    Tail a log file and print alerts as new findings are detected.
+    Stops on Ctrl+C, or after max_ticks if provided (used by tests).
+    """
+    if allowed_ports is None:
+        allowed_ports = {22, 80, 443, 53, 123}
+
+    blocklist = load_blocklist(blocklist_path) if blocklist_path else []
+
+    print(f"[watch] Monitoring {log_path} every {poll_interval}s")
+    if max_ticks is None:
+        print("[watch] Press Ctrl+C to stop.\n")
+    else:
+        print(f"[watch] Running {max_ticks} tick(s).\n")
+
+    try:
+        position = 0 if from_start else os.path.getsize(log_path)
+    except FileNotFoundError:
+        print(f"[warn] Log file not found: {log_path}. Waiting...")
+        position = 0
+
+    buffer = []
+    seen = set()
+    tick = 0
+
+    try:
+        while True:
+            if max_ticks is not None and tick >= max_ticks:
+                break
+            tick += 1
+
+            try:
+                size = os.path.getsize(log_path)
+            except FileNotFoundError:
+                time.sleep(poll_interval)
+                continue
+
+            if size < position:
+                print("[watch] File shrank; resetting position.")
+                position = 0
+                buffer = []
+
+            if size > position:
+                with open(log_path, 'r') as f:
+                    f.seek(position)
+                    for line in f:
+                        entry = parse_log_line(line.strip())
+                        if entry:
+                            buffer.append(entry)
+                    position = f.tell()
+
+            if buffer:
+                newest = max(e['timestamp'] for e in buffer)
+                cutoff = newest - timedelta(minutes=lookback_minutes)
+                buffer = [e for e in buffer if e['timestamp'] >= cutoff]
+
+            if buffer:
+                findings = {
+                    'brute_force':    detect_brute_force(
+                        buffer, threshold=threshold,
+                        window_minutes=window_minutes),
+                    'distributed_bf': detect_distributed_brute_force(buffer),
+                    'port_scan':      detect_port_scan(buffer),
+                    'off_hours':      detect_off_hours_activity(buffer),
+                    'unusual_ports':  detect_unusual_ports(buffer, allowed_ports),
+                    'bad_ips':        detect_bad_ips(buffer, blocklist),
+                }
+
+                for kind, items in findings.items():
+                    for item in items:
+                        fp = _finding_fingerprint(kind, item)
+                        if fp in seen:
+                            continue
+                        seen.add(fp)
+                        _print_alert(kind, item)
+
+            time.sleep(poll_interval)
+
+    except KeyboardInterrupt:
+        print("\n[watch] Stopped.")
+
+    return seen
