@@ -665,3 +665,60 @@ def watch_log(log_path, blocklist_path=None, allowed_ports=None,
         print("\n[watch] Stopped.")
 
     return seen
+
+def plot_login_timeline(logs, output_path=None):
+    """
+    Plot failed logins per minute as a line chart.
+    Saves to output_path (default: data/login_timeline.png).
+    Returns True on success, False on failure.
+    """
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        import matplotlib.dates as mdates
+    except ImportError:
+        print("[warn] matplotlib not installed; skipping plot. "
+              "Install with: pip install matplotlib")
+        return False
+
+    if not logs:
+        print("[warn] No log data to plot.")
+        return False
+
+    counts = defaultdict(int)
+    for entry in logs:
+        if entry['action'] != 'FAILED':
+            continue
+        minute = entry['timestamp'].replace(second=0, microsecond=0)
+        counts[minute] += 1
+
+    if not counts:
+        print("[warn] No failed logins to plot.")
+        return False
+
+    times = sorted(counts.keys())
+    values = [counts[t] for t in times]
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.plot(times, values, marker='o', linestyle='-', color='#c0392b')
+    ax.set_title('Failed Login Attempts Over Time')
+    ax.set_xlabel('Time')
+    ax.set_ylabel('Failed attempts per minute')
+    ax.grid(True, linestyle='--', alpha=0.5)
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+    fig.autofmt_xdate()
+
+    if output_path is None:
+        output_path = 'data/login_timeline.png'
+
+    try:
+        fig.savefig(output_path, bbox_inches='tight', dpi=100)
+    except OSError as e:
+        print(f"[warn] Failed to write plot: {e}")
+        plt.close(fig)
+        return False
+
+    plt.close(fig)
+    print(f"[info] Timeline plot written to {output_path}")
+    return True
