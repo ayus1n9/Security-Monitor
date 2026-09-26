@@ -42,6 +42,22 @@ def positive_int(s):
 
     return value
 
+def positive_float(s):
+    """Parse a floating-point value that must be greater than zero."""
+    try:
+        value = float(s)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(
+            f"Invalid number: {s}"
+        ) from e
+
+    if value <= 0:
+        raise argparse.ArgumentTypeError(
+            "Value must be greater than 0."
+        )
+
+    return value
+
 def build_parser():
     parser = argparse.ArgumentParser(
         prog='security-toolkit',
@@ -137,8 +153,12 @@ def build_parser():
                    help='Path to blocklist (default: config)')
     w.add_argument('--allowed-ports', type=parse_ports, default=None,
                    help='Comma-separated allowed ports (default: config)')
-    w.add_argument('--interval', type=float, default=2.0,
-                   help='Poll interval in seconds (default: 2.0)')
+    w.add_argument(
+        '--interval',
+        type=positive_float,
+        default=2.0,
+        help='Poll interval in seconds; must be greater than 0 (default: 2.0)'
+    )
     w.add_argument('--threshold', type=positive_int, default=None,
                    help='Brute-force threshold (default: config)')
     w.add_argument('--window', type=positive_int, default=None,

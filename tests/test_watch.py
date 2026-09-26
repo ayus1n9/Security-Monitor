@@ -3,6 +3,8 @@ Tests for watch_log — the tail-follow monitor.
 """
 
 import os
+import threading
+import time
 import pytest
 
 from log_analyzer import watch_log
@@ -102,3 +104,37 @@ def test_watch_deduplicates_across_ticks(tmp_path, capsys):
 
     out = capsys.readouterr().out
     assert out.count('BRUTE FORCE') == 1
+
+def test_watch_detects_appended_brute_force(tmp_path, capsys):
+    path = _write(tmp_path, [])
+
+    result = {}
+
+    def run_watch():
+        result["seen"] = watch_log(
+            path,
+            from_start=False,
+            max_ticks=100,
+            poll_interval=0.01
+        )
+
+    thread = threading.Thread(target=run_watch)
+    thread.start()
+
+    time.sleep(0.05)
+
+    with open(path, 'a') as f:
+        for i in range(6):
+            f.write(
+                f'2025-01-15 08:30:{i:02d},'
+                f'1.2.3.4,10.0.0.5,22,FAILED,root\n'
+            )
+
+    thread.join(timeout=2)
+
+    assert not thread.is_alive()
+
+    out = capsys.readouterr().out
+    assert 'BRUTE FORCE' in out
+    assert '1.2.3.4' in out
+    assert 'root' in out

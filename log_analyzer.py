@@ -722,3 +722,74 @@ def plot_login_timeline(logs, output_path=None):
     plt.close(fig)
     print(f"[info] Timeline plot written to {output_path}")
     return True
+
+def plot_port_distribution(logs, output_path=None, top_n=15):
+    """
+    Horizontal bar chart of traffic count per destination port.
+    Top-N ports by count; the rest are grouped as 'other'.
+    Saves to output_path (default: data/port_distribution.png).
+    Returns True on success, False on failure.
+    """
+    if not isinstance(top_n, int) or top_n <= 0:
+        print("[warn] top_n must be greater than 0.")
+        return False
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+    except ImportError:
+        print("[warn] matplotlib not installed; skipping plot.")
+        return False
+
+    if not logs:
+        print("[warn] No log data to plot.")
+        return False
+
+    counts = defaultdict(int)
+    for entry in logs:
+        counts[entry['dst_port']] += 1
+
+    if not counts:
+        print("[warn] No port data to plot.")
+        return False
+
+    ordered = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
+    top = ordered[:top_n]
+    rest = ordered[top_n:]
+
+    labels = [str(port) for port, _ in top]
+    values = [count for _, count in top]
+
+    if rest:
+        labels.append('other')
+        values.append(sum(c for _, c in rest))
+
+    labels = labels[::-1]
+    values = values[::-1]
+
+    fig, ax = plt.subplots(figsize=(10, max(4, len(labels) * 0.4)))
+    bars = ax.barh(labels, values, color='#2c7fb8')
+
+    ax.set_title('Traffic Distribution by Destination Port')
+    ax.set_xlabel('Event count')
+    ax.set_ylabel('Destination port')
+    ax.grid(True, axis='x', linestyle='--', alpha=0.5)
+
+    for bar, value in zip(bars, values):
+        ax.text(bar.get_width() + max(values) * 0.01,
+                bar.get_y() + bar.get_height() / 2,
+                str(value), va='center', fontsize=9)
+
+    if output_path is None:
+        output_path = 'data/port_distribution.png'
+
+    try:
+        fig.savefig(output_path, bbox_inches='tight', dpi=100)
+    except OSError as e:
+        print(f"[warn] Failed to write plot: {e}")
+        plt.close(fig)
+        return False
+
+    plt.close(fig)
+    print(f"[info] Port distribution plot written to {output_path}")
+    return True
