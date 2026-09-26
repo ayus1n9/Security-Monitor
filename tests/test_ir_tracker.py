@@ -5,9 +5,7 @@ Run: python3 -m pytest tests/ -v
 
 import json
 import os
-
 import pytest
-
 import ir_tracker
 from ir_tracker import (
     STAGES,
@@ -21,6 +19,9 @@ from ir_tracker import (
     _auto_severity
 )
 from ir_tracker import link_report_to_incident
+from ir_tracker import export_incident_markdown
+from ir_tracker import close_incident
+
 
 
 @pytest.fixture(autouse=True)
@@ -302,3 +303,109 @@ def test_load_invalid_structure_returns_none(isolated_incidents_dir):
         }, f)
 
     assert load_incident(incident_id) is None
+
+
+def test_export_markdown_creates_file(isolated_incidents_dir):
+    inc = create_incident("Markdown export test", severity='high')
+    add_action(inc, 'Preparation', 'Baseline audit', notes='v4.2.1')
+    add_action(inc, 'Detection/Analysis', 'Detected brute force')
+
+    md_path = os.path.join(str(isolated_incidents_dir), 'test.md')
+    ok = export_incident_markdown(inc, output_path=md_path)
+    assert ok is True
+    assert os.path.exists(md_path)
+
+    content = open(md_path).read()
+    assert inc['id'] in content
+    assert 'Markdown export test' in content
+    assert '**HIGH**' in content
+    assert 'Baseline audit' in content
+    assert 'v4.2.1' in content
+    assert 'Detected brute force' in content
+    assert '## Preparation' in content
+    assert '## Detection/Analysis' in content
+    assert '## Containment/Eradication/Recovery' in content
+    assert '## Post-Incident' in content
+    assert '_No actions logged._' in content
+    assert 'Total actions logged: 2' in content
+
+
+def test_export_markdown_default_path(isolated_incidents_dir):
+    inc = create_incident("Default path test")
+    ok = export_incident_markdown(inc)
+    assert ok is True
+    expected = os.path.join(str(isolated_incidents_dir), f"{inc['id']}.md")
+    assert os.path.exists(expected)
+
+
+def test_export_markdown_no_id_returns_false():
+    assert export_incident_markdown({'name': 'no id'}) is False
+
+
+def test_export_markdown_none_returns_false():
+    assert export_incident_markdown(None) is False
+
+def test_create_from_findings_returns_none_on_save_failure(monkeypatch):
+    monkeypatch.setattr(ir_tracker, 'save_json', lambda *a, **k: False)
+    result = create_incident_from_findings({'brute_force': [{'src_ip': '1.1.1.1', 'username': 'r', 'count': 5, 'first_seen': None, 'last_seen': None, 'dst_ports': {22}}]}, "Should fail")
+    assert result is None
+
+
+def test_close_incident_success():
+    inc = create_incident("To close", severity='medium')
+    ok = close_incident(inc, "Attacker blocked; no exfil")
+    assert ok is True
+    assert inc['status'] == 'closed'
+    post = inc['stages']['Post-Incident']
+    assert len(post) == 1
+    assert 'Incident closed' in post[0]['action']
+    assert 'no exfil' in post[0]['action']
+
+
+def test_close_incident_updates_severity():
+    inc = create_incident("Severity change", severity='low')
+    ok = close_incident(inc, "Escalated", severity='critical')
+    assert ok is True
+    assert inc['severity'] == 'critical'
+    assert inc['status'] == 'closed'
+
+
+def test_close_incident_rejects_already_closed():
+    inc = create_incident("Double close")
+    assert close_incident(inc, "first close") is True
+    assert close_incident(inc, "second close") is False
+    assert len(inc['stages']['Post-Incident']) == 1
+
+
+def test_close_incident_rejects_empty_summary():
+    inc = create_incident("Empty summary")
+    assert close_incident(inc, "") is False
+    assert close_incident(inc, "   ") is False
+    assert inc['status'] == 'open'
+
+
+def test_close_incident_rejects_none():
+    assert close_incident(None, "whatever") is False
+
+
+def test_close_incident_persists():
+    inc = create_incident("Persist close")
+    close_incident(inc, "done")
+    reloaded = load_incident(inc['id'])
+    assert reloaded['status'] == 'closed'
+    assert len(reloaded['stages']['Post-Incident']) == 1
+
+
+def test_close_incident_rolls_back_on_save_failure(monkeypatch):
+    inc = create_incident("Rollback close", severity='high')
+    original_sev = inc['severity']
+
+    def failing_save(_):
+        return False
+    monkeypatch.setattr(ir_tracker, 'save_incident', failing_save)
+
+    ok = close_incident(inc, "should roll back", severity='low')
+    assert ok is False
+    assert inc['status'] == 'open'
+    assert inc['severity'] == original_sev
+    assert inc['stages']['Post-Incident'] == []

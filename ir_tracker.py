@@ -575,12 +575,15 @@ def create_incident_from_findings(findings, name, severity=None):
     Create an IR incident pre-populated with a summary action per
     detection category. Severity is auto-assigned from findings unless
     overridden.
-    Returns the incident dict.
+    Returns the incident dict, or None if incident creation fails.
     """
     if severity is None:
         severity = _auto_severity(findings)
 
     incident = create_incident(name, severity=severity, status='open')
+
+    if incident is None:
+        return None
 
     for key, summarizer in _SUMMARIZERS:
         items = findings.get(key) or []
@@ -622,6 +625,109 @@ def link_report_to_incident(incident, report_path):
     action = f"Attached evidence: {dest_name}"
     notes = f"Source: {report_path}"
     return add_action(incident, 'Preparation', action, notes=notes)
+
+def export_incident_markdown(incident, output_path=None):
+    """
+    Render an incident as a Markdown file.
+    Returns True on success, False on failure.
+    """
+    if not incident or not incident.get('id'):
+        print("[warn] Cannot export: incident missing 'id'")
+        return False
+
+    incident_id = incident['id']
+    name = incident.get('name', '(unnamed)')
+    created = utils.fmt_ts(incident.get('created', ''))
+    status = incident.get('status', 'open').upper()
+    severity = incident.get('severity', 'low').upper()
+
+    lines = []
+    lines.append(f"# {incident_id} — {name}")
+    lines.append('')
+    lines.append(f"| Field | Value |")
+    lines.append(f"| --- | --- |")
+    lines.append(f"| ID | `{incident_id}` |")
+    lines.append(f"| Created | {created} |")
+    lines.append(f"| Status | **{status}** |")
+    lines.append(f"| Severity | **{severity}** |")
+    lines.append('')
+
+    stages = incident.get('stages', {})
+    total = 0
+
+    for stage in STAGES:
+        entries = stages.get(stage, [])
+        total += len(entries)
+        lines.append(f"## {stage}")
+        lines.append('')
+        if not entries:
+            lines.append('_No actions logged._')
+            lines.append('')
+            continue
+
+        for e in entries:
+            ts = utils.fmt_ts(e.get('timestamp', ''))
+            action = e.get('action', '(no action)')
+            lines.append(f"- **{ts}** — {action}")
+            notes = e.get('notes', '')
+            if notes:
+                lines.append(f"  - _{notes}_")
+        lines.append('')
+
+    lines.append('---')
+    lines.append(f"_Total actions logged: {total}_")
+    lines.append('')
+
+    if output_path is None:
+        output_path = os.path.join(INCIDENTS_DIR, f"{incident_id}.md")
+
+    try:
+        with open(output_path, 'w') as f:
+            f.write('\n'.join(lines))
+        return True
+    except OSError as e:
+        print(f"[warn] Failed to write markdown {output_path}: {e}")
+        return False
+
+def close_incident(incident, summary, severity=None):
+    """
+    Close an incident with a final Post-Incident summary action.
+    Optionally update severity. Cannot close an already-closed incident.
+    Returns True on success, False on failure.
+    """
+    if not validate_incident(incident):
+        print("[warn] Cannot close: invalid incident data")
+        return False
+
+    if incident.get('status') == 'closed':
+        print(f"[warn] Incident {incident['id']} is already closed")
+        return False
+
+    if not summary or not summary.strip():
+        print("[warn] Cannot close: summary is required")
+        return False
+
+    original_status = incident.get('status', 'open')
+    original_severity = incident.get('severity', 'low')
+
+    if severity is not None:
+        if severity not in SEVERITIES:
+            print(f"[warn] Invalid severity {severity!r}; "
+                  f"keeping {original_severity}")
+        else:
+            incident['severity'] = severity
+
+    incident['status'] = 'closed'
+
+    ok = add_action(incident, 'Post-Incident',
+                    f"Incident closed: {summary.strip()}")
+
+    if not ok:
+        incident['status'] = original_status
+        incident['severity'] = original_severity
+        return False
+
+    return True
 
 if __name__ == '__main__':
     ir_menu()
