@@ -130,6 +130,26 @@ def build_parser():
     r.add_argument('--config', default='config.json')
     r.add_argument('--name', default=None, help='Incident name (default: auto-generated from log path)')
 
+    w = sub.add_parser('watch', help='Tail a log file and alert in real time')
+    w.add_argument('--log', default=None,
+                   help='Path to log file (default: config)')
+    w.add_argument('--blocklist', default=None,
+                   help='Path to blocklist (default: config)')
+    w.add_argument('--allowed-ports', type=parse_ports, default=None,
+                   help='Comma-separated allowed ports (default: config)')
+    w.add_argument('--interval', type=float, default=2.0,
+                   help='Poll interval in seconds (default: 2.0)')
+    w.add_argument('--threshold', type=positive_int, default=None,
+                   help='Brute-force threshold (default: config)')
+    w.add_argument('--window', type=positive_int, default=None,
+                   help='Brute-force window in minutes (default: config)')
+    w.add_argument('--lookback', type=positive_int, default=10,
+                   help='Buffer retention in minutes (default: 10)')
+    w.add_argument('--from-start', action='store_true',
+                   help='Process existing file content on first tick')
+    w.add_argument('--config', default='config.json',
+                   help='Path to config file (default: config.json)')
+
     return parser
 
 def main():
@@ -174,6 +194,26 @@ def main():
 
     elif args.command == 'ir':
         ir_tracker.ir_menu()
+
+    elif args.command == 'watch':
+        config = utils.load_config(args.config)
+        log_path = args.log or config['log_path']
+        blocklist_path = args.blocklist or config['blocklist_path']
+        allowed_ports = args.allowed_ports or set(config['allowed_ports'])
+        threshold = args.threshold if args.threshold is not None else config['brute_force_threshold']
+        window_minutes = args.window if args.window is not None else config['brute_force_window_minutes']
+
+        log_analyzer.watch_log(
+            log_path=log_path,
+            blocklist_path=blocklist_path,
+            allowed_ports=allowed_ports,
+            poll_interval=args.interval,
+            lookback_minutes=args.lookback,
+            threshold=threshold,
+            window_minutes=window_minutes,
+            from_start=args.from_start,
+            max_ticks=None,
+        )
 
 if __name__ == '__main__':
     main()
