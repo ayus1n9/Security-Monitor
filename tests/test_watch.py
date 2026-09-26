@@ -7,8 +7,7 @@ import threading
 import time
 import pytest
 
-from log_analyzer import watch_log
-
+from sentinelog.log_analyzer import watch_log
 
 def _write(tmp_path, lines):
     path = tmp_path / "test.log"

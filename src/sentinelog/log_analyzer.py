@@ -1,7 +1,7 @@
 import os
 import time
 import ipaddress
-import utils
+from . import utils
 import re
 from collections import defaultdict
 from datetime import datetime, timedelta

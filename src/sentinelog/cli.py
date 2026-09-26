@@ -6,9 +6,9 @@ Usage:
 """
 
 import argparse
-import utils
-import ir_tracker
-import log_analyzer
+from . import utils
+from . import ir_tracker
+from . import log_analyzer
 
 def parse_ports(s):
     """Parse and validate a comma-separated list of ports."""

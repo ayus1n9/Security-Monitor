@@ -4,8 +4,8 @@ import shutil
 import uuid
 import re
 from datetime import datetime
-import utils
-from utils import load_json, save_json
+from . import utils
+from .utils import load_json, save_json
 from datetime import datetime, timedelta
 
 

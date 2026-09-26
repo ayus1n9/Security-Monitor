@@ -4,8 +4,7 @@ Tests for log_analyzer plotting functions.
 
 import os
 import pytest
-from log_analyzer import plot_login_timeline
-from log_analyzer import plot_port_distribution
+from sentinelog.log_analyzer import plot_login_timeline, plot_port_distribution
 
 
 def _make_entry(ts, action='FAILED'):

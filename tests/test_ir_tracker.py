@@ -6,8 +6,8 @@ Run: python3 -m pytest tests/ -v
 import json
 import os
 import pytest
-import ir_tracker
-from ir_tracker import (
+from sentinelog import ir_tracker
+from sentinelog.ir_tracker import (
     STAGES,
     create_incident,
     load_incident,
@@ -16,17 +16,17 @@ from ir_tracker import (
     list_incidents,
     view_incident,
     create_incident_from_findings,
-    _auto_severity
+    _auto_severity,
+    link_report_to_incident,
+    export_incident_markdown,
+    search_incidents,
+    filter_incidents,
+    dashboard_stats,
+    add_evidence,
+    list_evidence,
+    export_all_incidents_markdown,
+    close_incident,
 )
-from ir_tracker import link_report_to_incident
-from ir_tracker import export_incident_markdown
-from ir_tracker import close_incident
-from ir_tracker import search_incidents
-from ir_tracker import filter_incidents
-from ir_tracker import dashboard_stats
-from ir_tracker import add_evidence
-from ir_tracker import list_evidence
-from ir_tracker import export_all_incidents_markdown
 
 
 @pytest.fixture(autouse=True)

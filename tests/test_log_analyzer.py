@@ -6,7 +6,7 @@ Run: python3 -m pytest tests/ -v
 import pytest
 from datetime import datetime
 
-from log_analyzer import (
+from sentinelog.log_analyzer import (
     parse_log_line,
     detect_brute_force,
     detect_unusual_ports,
