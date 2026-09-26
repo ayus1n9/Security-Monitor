@@ -21,7 +21,7 @@ from ir_tracker import (
 from ir_tracker import link_report_to_incident
 from ir_tracker import export_incident_markdown
 from ir_tracker import close_incident
-
+from ir_tracker import search_incidents
 
 
 @pytest.fixture(autouse=True)
@@ -409,3 +409,52 @@ def test_close_incident_rolls_back_on_save_failure(monkeypatch):
     assert inc['status'] == 'open'
     assert inc['severity'] == original_sev
     assert inc['stages']['Post-Incident'] == []
+
+
+def test_search_finds_by_name():
+    create_incident("SSH Brute Force Incident")
+    create_incident("Ransomware Case")
+    results = search_incidents("brute")
+    assert len(results) == 1
+    assert results[0]['name'] == "SSH Brute Force Incident"
+
+
+def test_search_finds_by_action_text():
+    inc = create_incident("Case A")
+    add_action(inc, 'Detection/Analysis', 'Confirmed brute force from 203.0.113.5')
+    create_incident("Case B")
+    results = search_incidents("203.0.113.5")
+    assert len(results) == 1
+    assert results[0]['id'] == inc['id']
+    assert any('203.0.113.5' in m['snippet'] for m in results[0]['matches'])
+
+
+def test_search_finds_by_notes():
+    inc = create_incident("Case A")
+    add_action(inc, 'Preparation', 'Baseline audit', notes='SSH keys rotated')
+    results = search_incidents("keys rotated")
+    assert len(results) == 1
+    assert results[0]['id'] == inc['id']
+    notes_matches = [m for m in results[0]['matches'] if 'SSH keys' in m['snippet']]
+    assert len(notes_matches) == 1
+
+
+def test_search_case_insensitive_by_default():
+    create_incident("BRUTE FORCE UPPERCASE")
+    assert len(search_incidents("brute")) == 1
+    assert len(search_incidents("BRUTE")) == 1
+    assert len(search_incidents("Brute")) == 1
+
+
+def test_search_case_sensitive_mode():
+    create_incident("brute lower")
+    create_incident("BRUTE upper")
+    assert len(search_incidents("brute", case_sensitive=True)) == 1
+    assert len(search_incidents("BRUTE", case_sensitive=True)) == 1
+
+
+def test_search_empty_returns_empty():
+    create_incident("Case A")
+    assert search_incidents("") == []
+    assert search_incidents("   ") == []
+    assert search_incidents(None) == []

@@ -729,5 +729,73 @@ def close_incident(incident, summary, severity=None):
 
     return True
 
+def search_incidents(query, case_sensitive=False):
+    """
+    Search incidents by substring across name, action text, and notes.
+    Returns a list of match summaries (newest-first), each containing
+    the incident's metadata plus a 'matches' list showing where the
+    query hit.
+    """
+    if not isinstance(query, str) or not query.strip():
+        print("[warn] Search query cannot be empty")
+        return []
+
+    needle = query if case_sensitive else query.lower()
+
+    def contains(haystack):
+        if not isinstance(haystack, str):
+            return False
+        if case_sensitive:
+            return needle in haystack
+        return needle in haystack.lower()
+
+    results = []
+
+    for summary in list_incidents():
+        incident = load_incident(summary['id'])
+        if incident is None:
+            continue
+
+        matches = []
+
+        if contains(incident.get('name', '')):
+            matches.append({
+                'stage': '(name)',
+                'timestamp': incident.get('created', ''),
+                'snippet': incident.get('name', ''),
+            })
+
+        stages = incident.get('stages', {})
+        for stage in STAGES:
+            for entry in stages.get(stage, []):
+                action = entry.get('action', '')
+                notes = entry.get('notes', '')
+
+                if contains(action):
+                    matches.append({
+                        'stage': stage,
+                        'timestamp': entry.get('timestamp', ''),
+                        'snippet': action,
+                    })
+                if contains(notes):
+                    matches.append({
+                        'stage': stage,
+                        'timestamp': entry.get('timestamp', ''),
+                        'snippet': notes,
+                    })
+
+        if matches:
+            results.append({
+                'id': incident['id'],
+                'name': incident.get('name', '(unnamed)'),
+                'created': incident.get('created', ''),
+                'status': incident.get('status', 'open'),
+                'severity': incident.get('severity', 'low'),
+                'matches': matches,
+            })
+
+    results.sort(key=lambda r: r['created'], reverse=True)
+    return results
+
 if __name__ == '__main__':
     ir_menu()
