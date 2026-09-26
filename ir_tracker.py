@@ -339,6 +339,7 @@ def list_incidents():
             'severity': incident.get('severity', 'low'),
             'total_actions': total_actions,
             'stage_counts': stage_counts,
+            'closed_at': incident.get('closed_at'),
         })
 
     summaries.sort(
@@ -895,13 +896,14 @@ def close_incident(incident, summary, severity=None):
             incident['severity'] = severity
 
     incident['status'] = 'closed'
+    incident['closed_at'] = datetime.now().isoformat(timespec='seconds')
 
-    ok = add_action(incident, 'Post-Incident',
-                    f"Incident closed: {summary.strip()}")
+    ok = add_action(incident, 'Post-Incident', f"Incident closed: {summary.strip()}")
 
     if not ok:
         incident['status'] = original_status
         incident['severity'] = original_severity
+        incident.pop('closed_at', None)
         return False
 
     return True
@@ -1073,9 +1075,15 @@ def dashboard_stats():
             age_days = (now - created).total_seconds() / 86400
             open_ages.append((age_days, s))
         elif status == 'closed':
-            pass
+            closed_at_str = s.get('closed_at')
+            if closed_at_str:
+                try:
+                    closed_at = datetime.fromisoformat(closed_at_str)
+                    if closed_at >= seven_days_ago:
+                        closed_last_7_days += 1
+                except (ValueError, TypeError):
+                    pass
 
-    # Oldest open incident
     oldest_open = None
     if open_ages:
         open_ages.sort(key=lambda x: x[0], reverse=True)

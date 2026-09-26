@@ -778,3 +778,31 @@ def test_bulk_export_creates_target_dir(tmp_path):
     assert ok is True
     assert target.exists()
     assert len(list(target.glob("*.md"))) == 1
+
+def test_close_incident_stores_closed_at():
+    inc = create_incident("Closed with timestamp")
+
+    ok = close_incident(inc, "resolved")
+
+    assert ok is True
+    assert 'closed_at' in inc
+
+    from datetime import datetime as _dt
+    _dt.fromisoformat(inc['closed_at'])
+
+    loaded = load_incident(inc['id'])
+    assert loaded is not None
+    assert loaded['closed_at'] == inc['closed_at']
+
+
+def test_dashboard_closed_last_7_days():
+    a = create_incident("Closed A")
+    b = create_incident("Closed B")
+
+    close_incident(a, "done")
+    close_incident(b, "done")
+
+    stats = dashboard_stats()
+
+    assert stats['by_status']['closed'] == 2
+    assert stats['closed_last_7_days'] == 2
