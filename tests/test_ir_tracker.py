@@ -26,6 +26,7 @@ from ir_tracker import filter_incidents
 from ir_tracker import dashboard_stats
 from ir_tracker import add_evidence
 from ir_tracker import list_evidence
+from ir_tracker import export_all_incidents_markdown
 
 
 @pytest.fixture(autouse=True)
@@ -729,3 +730,30 @@ def test_list_evidence_handles_missing_key():
         'stages': {s: [] for s in STAGES},
     }
     assert list_evidence(old) == []
+
+
+def test_bulk_export_empty_dir(tmp_path):
+    target = tmp_path / "exports"
+    ok = export_all_incidents_markdown(str(target))
+    assert ok is False
+
+
+def test_bulk_export_writes_all(isolated_incidents_dir, tmp_path):
+    a = create_incident("Alpha")
+    b = create_incident("Beta")
+    add_action(a, 'Preparation', 'prep action')
+
+    target = tmp_path / "exports"
+    ok = export_all_incidents_markdown(str(target))
+    assert ok is True
+    assert (target / f"{a['id']}.md").exists()
+    assert (target / f"{b['id']}.md").exists()
+
+
+def test_bulk_export_creates_target_dir(tmp_path):
+    create_incident("Single")
+    target = tmp_path / "nested" / "deep" / "exports"
+    ok = export_all_incidents_markdown(str(target))
+    assert ok is True
+    assert target.exists()
+    assert len(list(target.glob("*.md"))) == 1

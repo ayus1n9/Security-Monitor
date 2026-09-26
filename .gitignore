@@ -25,5 +25,5 @@ data/report.txt
 data/incidents/
 !data/incidents/.gitkeep
 data/incidents/*_evidence/
-
 data/*.png
+data/exports/

@@ -1013,5 +1013,39 @@ def list_evidence(incident, stage=None):
 
     return sorted(entries, key=sort_key)
 
+def export_all_incidents_markdown(directory):
+    """
+    Export every incident on disk to a .md file in `directory`.
+    Returns True if at least one file was exported.
+    """
+    if not utils.ensure_dir(directory):
+        return False
+
+    summaries = list_incidents()
+    if not summaries:
+        print("[info] No incidents to export.")
+        return False
+
+    successes = 0
+    failures = 0
+
+    for s in summaries:
+        incident = load_incident(s['id'])
+        if incident is None:
+            failures += 1
+            continue
+
+        output_path = os.path.join(directory, f"{incident['id']}.md")
+        if export_incident_markdown(incident, output_path=output_path):
+            successes += 1
+        else:
+            failures += 1
+
+    total = len(summaries)
+    print(f"[info] Exported {successes} of {total} incidents to {directory}"
+          + (f" ({failures} failed)" if failures else ""))
+
+    return successes > 0
+
 if __name__ == '__main__':
     ir_menu()
