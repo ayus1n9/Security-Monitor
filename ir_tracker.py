@@ -343,135 +343,306 @@ def list_incidents():
 
     return summaries
 
+def _menu_list():
+    """Option 1: list all incidents."""
+    incidents = list_incidents()
+    if not incidents:
+        print("  (no incidents yet)")
+        return
+    for s in incidents:
+        print(f"  {s['id']}  {s['name']}  "
+              f"[{s['status']}/{s['severity']}]  "
+              f"(actions={s['total_actions']})")
+
+
+def _menu_dashboard():
+    """Option 6: print aggregate stats."""
+    stats = dashboard_stats()
+    print()
+    print(f"  Total incidents : {stats['total']}")
+    print(f"  Open / Closed   : {stats['by_status']['open']} / "
+          f"{stats['by_status']['closed']}")
+    bs = stats['by_severity']
+    print(f"  By severity     : low={bs['low']} med={bs['medium']} "
+          f"high={bs['high']} crit={bs['critical']}")
+    obs = stats['open_by_severity']
+    print(f"  Open by severity: low={obs['low']} med={obs['medium']} "
+          f"high={obs['high']} crit={obs['critical']}")
+    print(f"  New in last 7d  : {stats['new_last_7_days']}")
+    if stats['oldest_open']:
+        oo = stats['oldest_open']
+        print(f"  Oldest open     : {oo['id']} — {oo['name']} "
+              f"({oo['age_days']} days)")
+    else:
+        print("  Oldest open     : (none)")
+    print(f"  Mean open age   : {stats['mean_open_age_days']} days")
+
+
+def _menu_search():
+    """Option 7: search incidents by text."""
+    query = input("Search query: ").strip()
+    if not query:
+        print("  [warn] Query cannot be empty.")
+        return
+
+    cs_raw = input("Case sensitive? [y/N]: ").strip().lower()
+    case_sensitive = cs_raw in ('y', 'yes')
+
+    results = search_incidents(query, case_sensitive=case_sensitive)
+    if not results:
+        print("  (no matches)")
+        return
+
+    for r in results:
+        print(f"  {r['id']}  {r['name']}  "
+              f"[{r['status']}/{r['severity']}]  "
+              f"({len(r['matches'])} match(es))")
+
+
+def _menu_filter():
+    """Option 8: filter incidents by metadata."""
+    status = input("Status (open/closed/blank): ").strip() or None
+    severity = input("Severity (low/medium/high/critical/blank): ").strip() or None
+    since = input("Since (ISO date or blank): ").strip() or None
+    until = input("Until (ISO date or blank): ").strip() or None
+
+    kwargs = {}
+    if status is not None:
+        kwargs['status'] = status
+    if severity is not None:
+        kwargs['severity'] = severity
+    if since is not None:
+        kwargs['since'] = since
+    if until is not None:
+        kwargs['until'] = until
+
+    results = filter_incidents(**kwargs)
+    if not results:
+        print("  (no matches)")
+        return
+
+    for s in results:
+        print(f"  {s['id']}  {s['name']}  "
+              f"[{s['status']}/{s['severity']}]  "
+              f"(actions={s['total_actions']})")
+
+
+def _prompt_stage():
+    """Prompt for a stage number (1-4). Returns stage name or None."""
+    print("  Stages:")
+    for i, stage in enumerate(STAGES, start=1):
+        print(f"    {i}. {stage}")
+    raw = input("  Stage number: ").strip()
+    try:
+        idx = int(raw) - 1
+        if idx < 0 or idx >= len(STAGES):
+            raise ValueError
+    except ValueError:
+        print("  [warn] Invalid stage number.")
+        return None
+    return STAGES[idx]
+
+
+def _menu_add_action(current):
+    """Option 4: append an action to a stage."""
+    stage = _prompt_stage()
+    if stage is None:
+        return
+
+    action = input("  Action: ").strip()
+    if not action:
+        print("  [warn] Action cannot be empty.")
+        return
+
+    notes = input("  Notes (optional): ").strip()
+    if add_action(current, stage, action, notes):
+        print(f"  Logged to {stage}")
+
+
+def _menu_add_evidence(current):
+    """Option 9: attach evidence to a stage."""
+    stage = _prompt_stage()
+    if stage is None:
+        return
+
+    etype = input("  Evidence type (e.g., pcap, screenshot, ioc_list): ").strip()
+    if not etype:
+        print("  [warn] Evidence type cannot be empty.")
+        return
+
+    desc = input("  Description: ").strip()
+    if not desc:
+        print("  [warn] Description cannot be empty.")
+        return
+
+    src = input("  Source file path (blank for reference only): ").strip()
+    source_path = src if src else None
+
+    if add_evidence(current, stage, etype, desc, source_path=source_path):
+        print(f"  Evidence attached to {stage}")
+
+
+def _menu_list_evidence(current):
+    """Option 10: list evidence, optionally filtered by stage."""
+    print("  Stages:")
+    for i, stage in enumerate(STAGES, start=1):
+        print(f"    {i}. {stage}")
+    raw = input("  Filter by stage (blank = all, 1-4 = specific): ").strip()
+
+    stage_filter = None
+    if raw:
+        try:
+            idx = int(raw) - 1
+            if idx < 0 or idx >= len(STAGES):
+                raise ValueError
+            stage_filter = STAGES[idx]
+        except ValueError:
+            print("  [warn] Invalid stage number; showing all evidence.")
+            stage_filter = None
+
+    entries = list_evidence(current, stage=stage_filter)
+    if not entries:
+        print("  (no evidence)")
+        return
+
+    for e in entries:
+        print(f"  [{e.get('timestamp', '?')}] [{e.get('stage', '?')}] "
+              f"{e.get('type', '?')} — {e.get('description', '')}")
+        if e.get('file'):
+            print(f"      file: {e['file']}")
+
+
+def _menu_close(current):
+    """Option 11: close the current incident."""
+    if current.get('status') == 'closed':
+        print("  [warn] Incident is already closed.")
+        return
+
+    summary = input("  Closing summary: ").strip()
+    if not summary:
+        print("  [warn] Summary cannot be empty.")
+        return
+
+    sev_raw = input(
+        "  Update severity? (blank to keep, else low/medium/high/critical): "
+    ).strip().lower()
+    new_sev = sev_raw if sev_raw else None
+
+    if close_incident(current, summary, severity=new_sev):
+        print(f"  Incident {current['id']} closed.")
+
+
+def _menu_export(current):
+    """Option 12: export current incident as Markdown."""
+    path = input("  Output path (blank = default): ").strip()
+    output_path = path if path else None
+
+    if export_incident_markdown(current, output_path=output_path):
+        where = output_path or f"{INCIDENTS_DIR}/{current['id']}.md"
+        print(f"  Exported to {where}")
 
 def ir_menu():
     """
     Interactive incident-response tracker menu.
-
-    Returns when the user chooses Exit, presses Ctrl+C,
-    or sends EOF.
+    Returns when user chooses Exit, presses Ctrl+C, or sends EOF.
     """
     current = None
-
     print("\n=== IR TRACKER ===")
 
     try:
         while True:
             print()
-
             if current:
                 print(f"Current incident: {current['id']} — {current['name']}")
                 print(f"  Status: {current.get('status', 'open').upper()}  "
-                    f"Severity: {current.get('severity', 'low').upper()}")
+                      f"Severity: {current.get('severity', 'low').upper()}")
             else:
                 print("Current incident: (none loaded)")
 
-            print("  1. List all incidents")
-            print("  2. Create new incident")
-            print("  3. Load an incident by ID")
-            print("  4. Add action to current incident")
-            print("  5. View current incident")
-            print("  6. Exit")
+            print("  1.  List all incidents")
+            print("  2.  Create new incident")
+            print("  3.  Load an incident by ID")
+            print("  4.  Add action to current incident")
+            print("  5.  View current incident")
+            print("  6.  Dashboard stats")
+            print("  7.  Search incidents")
+            print("  8.  Filter incidents")
+            print("  9.  Add evidence to current incident")
+            print("  10. List evidence of current incident")
+            print("  11. Close current incident")
+            print("  12. Export current incident as Markdown")
+            print("  13. Exit")
 
             choice = input("Choice: ").strip()
 
             if choice == '1':
-                incidents = list_incidents()
-
-                if not incidents:
-                    print("  (no incidents yet)")
-                    continue
-
-                for summary in incidents:
-                    print(
-                        f"  {summary['id']}  "
-                        f"{summary['name']}  "
-                        f"(actions={summary['total_actions']})"
-                    )
+                _menu_list()
 
             elif choice == '2':
                 name = input("Incident name: ").strip()
-
                 if not name:
                     print("  [warn] Name cannot be empty.")
                     continue
-
                 created = create_incident(name)
-
                 if created is None:
                     print("  [warn] Failed to create incident.")
                     continue
-
                 current = created
                 print(f"  Created {current['id']}")
 
             elif choice == '3':
                 incident_id = input("Incident ID: ").strip()
-
                 loaded = load_incident(incident_id)
-
                 if loaded is not None:
                     current = loaded
                     print(f"  Loaded {current['id']}")
 
             elif choice == '4':
                 if current is None:
-                    print(
-                        "  [warn] "
-                        "Load or create an incident first."
-                    )
+                    print("  [warn] Load or create an incident first.")
                     continue
-
-                print("  Stages:")
-
-                for index, stage in enumerate(STAGES, start=1):
-                    print(f"    {index}. {stage}")
-
-                stage_choice = input(
-                    "  Stage number: "
-                ).strip()
-
-                try:
-                    stage_index = int(stage_choice) - 1
-
-                    if (
-                        stage_index < 0
-                        or stage_index >= len(STAGES)
-                    ):
-                        raise ValueError
-
-                except ValueError:
-                    print("  [warn] Invalid stage number.")
-                    continue
-
-                stage = STAGES[stage_index]
-
-                action = input("  Action: ").strip()
-
-                if not action:
-                    print("  [warn] Action cannot be empty.")
-                    continue
-
-                notes = input(
-                    "  Notes (optional): "
-                ).strip()
-
-                if add_action(
-                    current,
-                    stage,
-                    action,
-                    notes
-                ):
-                    print(f"  Logged to {stage}")
+                _menu_add_action(current)
 
             elif choice == '5':
                 if current is None:
                     print("  [warn] No incident loaded.")
                     continue
-
                 view_incident(current)
 
             elif choice == '6':
+                _menu_dashboard()
+
+            elif choice == '7':
+                _menu_search()
+
+            elif choice == '8':
+                _menu_filter()
+
+            elif choice == '9':
+                if current is None:
+                    print("  [warn] Load or create an incident first.")
+                    continue
+                _menu_add_evidence(current)
+
+            elif choice == '10':
+                if current is None:
+                    print("  [warn] No incident loaded.")
+                    continue
+                _menu_list_evidence(current)
+
+            elif choice == '11':
+                if current is None:
+                    print("  [warn] No incident loaded.")
+                    continue
+                _menu_close(current)
+
+            elif choice == '12':
+                if current is None:
+                    print("  [warn] No incident loaded.")
+                    continue
+                _menu_export(current)
+
+            elif choice == '13':
                 print("  Exiting IR tracker.")
                 return
 
