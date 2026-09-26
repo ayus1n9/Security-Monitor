@@ -55,11 +55,16 @@ def validate_incident(incident):
     if not isinstance(incident.get('created'), str):
         return False
 
+    if incident.get('status') not in STATUSES:
+        return False
+
+    if incident.get('severity') not in SEVERITIES:
+        return False
+
     stages = incident.get('stages')
     if not isinstance(stages, dict):
         return False
     
-    # Every expected stage must exist and contain a list.
     for stage in STAGES:
         if stage not in stages:
             return False
@@ -1136,8 +1141,9 @@ def add_evidence(incident, stage, evidence_type, description, source_path=None):
             return False
 
         ts_prefix = datetime.now().strftime('%Y%m%d-%H%M%S')
+        suffix = uuid.uuid4().hex[:8]
         stored_filename = (
-            f"{ts_prefix}_{os.path.basename(source_path)}"
+            f"{ts_prefix}_{suffix}_{os.path.basename(source_path)}"
         )
         dest = os.path.join(evidence_dir, stored_filename)
 

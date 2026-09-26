@@ -316,6 +316,27 @@ def test_load_invalid_structure_returns_none(isolated_incidents_dir):
     assert load_incident(incident_id) is None
 
 
+def test_load_rejects_invalid_metadata(isolated_incidents_dir):
+    incident_id = 'INC-20260925-120000-abcd'
+
+    path = os.path.join(
+        str(isolated_incidents_dir),
+        f'{incident_id}.json'
+    )
+
+    with open(path, 'w') as f:
+        json.dump({
+            'id': incident_id,
+            'name': 'Invalid metadata',
+            'created': '2026-09-25T12:00:00',
+            'status': 'banana',
+            'severity': 'unknown',
+            'stages': {s: [] for s in STAGES}
+        }, f)
+
+    assert load_incident(incident_id) is None
+
+
 def test_export_markdown_creates_file(isolated_incidents_dir):
     inc = create_incident("Markdown export test", severity='high')
     add_action(inc, 'Preparation', 'Baseline audit', notes='v4.2.1')
