@@ -797,5 +797,62 @@ def search_incidents(query, case_sensitive=False):
     results.sort(key=lambda r: r['created'], reverse=True)
     return results
 
+def filter_incidents(status=None, severity=None, since=None, until=None):
+    """
+    Return incident summaries filtered by metadata.
+    All provided filters are AND-ed. Newest-first.
+    - status:   'open' or 'closed'
+    - severity: 'low','medium','high','critical'
+    - since:    ISO date/datetime string (inclusive)
+    - until:    ISO date/datetime string (exclusive)
+    Returns [] on invalid filter input.
+    """
+    if status is not None and status not in STATUSES:
+        print(f"[warn] Invalid status filter: {status!r}")
+        return []
+
+    if severity is not None and severity not in SEVERITIES:
+        print(f"[warn] Invalid severity filter: {severity!r}")
+        return []
+
+    since_dt = None
+    until_dt = None
+
+    if since is not None:
+        try:
+            since_dt = datetime.fromisoformat(since)
+        except (ValueError, TypeError):
+            print(f"[warn] Invalid 'since' value: {since!r}")
+            return []
+
+    if until is not None:
+        try:
+            until_dt = datetime.fromisoformat(until)
+        except (ValueError, TypeError):
+            print(f"[warn] Invalid 'until' value: {until!r}")
+            return []
+
+    results = []
+    for summary in list_incidents():
+        if status is not None and summary.get('status') != status:
+            continue
+        if severity is not None and summary.get('severity') != severity:
+            continue
+
+        if since_dt is not None or until_dt is not None:
+            try:
+                created_dt = datetime.fromisoformat(summary['created'])
+            except (ValueError, TypeError, KeyError):
+                continue
+
+            if since_dt is not None and created_dt < since_dt:
+                continue
+            if until_dt is not None and created_dt >= until_dt:
+                continue
+
+        results.append(summary)
+
+    return results
+
 if __name__ == '__main__':
     ir_menu()

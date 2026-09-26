@@ -22,6 +22,7 @@ from ir_tracker import link_report_to_incident
 from ir_tracker import export_incident_markdown
 from ir_tracker import close_incident
 from ir_tracker import search_incidents
+from ir_tracker import filter_incidents
 
 
 @pytest.fixture(autouse=True)
@@ -69,10 +70,16 @@ def test_load_missing_returns_none():
     assert load_incident('INC-19000101-000000') is None
 
 def test_load_corrupt_returns_none(isolated_incidents_dir):
-    bad_path = os.path.join(str(isolated_incidents_dir), 'INC-BAD-1.json')
+    incident_id = 'INC-20260925-120000-abcd'
+    bad_path = os.path.join(
+        str(isolated_incidents_dir),
+        f'{incident_id}.json'
+    )
+
     with open(bad_path, 'w') as f:
         f.write('{not valid json')
-    assert load_incident('INC-BAD-1') is None
+
+    assert load_incident(incident_id) is None
 
 def test_add_action_success():
     inc = create_incident("Add action")
@@ -458,3 +465,61 @@ def test_search_empty_returns_empty():
     assert search_incidents("") == []
     assert search_incidents("   ") == []
     assert search_incidents(None) == []
+
+
+def test_filter_no_args_returns_all():
+    create_incident("A")
+    create_incident("B")
+    assert len(filter_incidents()) == 2
+
+
+def test_filter_by_status():
+    a = create_incident("Open case")
+    b = create_incident("Closed case")
+    close_incident(b, "resolved")
+    assert len(filter_incidents(status='open')) == 1
+    assert len(filter_incidents(status='closed')) == 1
+    assert filter_incidents(status='open')[0]['id'] == a['id']
+
+
+def test_filter_by_severity():
+    create_incident("Low", severity='low')
+    create_incident("High", severity='high')
+    create_incident("Critical", severity='critical')
+    assert len(filter_incidents(severity='high')) == 1
+    assert len(filter_incidents(severity='critical')) == 1
+    assert len(filter_incidents(severity='medium')) == 0
+
+
+def test_filter_combined():
+    create_incident("Open high", severity='high')
+    inc2 = create_incident("Closed high", severity='high')
+    close_incident(inc2, "done")
+    create_incident("Open low", severity='low')
+
+    results = filter_incidents(status='open', severity='high')
+    assert len(results) == 1
+    assert results[0]['name'] == "Open high"
+
+
+def test_filter_by_since():
+    inc_old = create_incident("Old")
+    inc_new = create_incident("New")
+
+    old_loaded = load_incident(inc_old['id'])
+    old_loaded['created'] = '2020-01-01T00:00:00'
+    save_incident(old_loaded)
+
+    results = filter_incidents(since='2025-01-01')
+    assert len(results) == 1
+    assert results[0]['id'] == inc_new['id']
+
+
+def test_filter_invalid_status_returns_empty():
+    create_incident("A")
+    assert filter_incidents(status='bogus') == []
+
+
+def test_filter_invalid_since_returns_empty():
+    create_incident("A")
+    assert filter_incidents(since='not-a-date') == []
