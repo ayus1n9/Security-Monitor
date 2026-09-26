@@ -6,6 +6,7 @@ import re
 from datetime import datetime
 import utils
 from utils import load_json, save_json
+from datetime import datetime, timedelta
 
 
 STAGES = [
@@ -853,6 +854,77 @@ def filter_incidents(status=None, severity=None, since=None, until=None):
         results.append(summary)
 
     return results
+
+def dashboard_stats():
+    """
+    Return aggregate statistics across all incidents on disk.
+    Used by the analyst/manager dashboard view.
+    """
+    summaries = list_incidents()
+
+    total = len(summaries)
+    by_status = {s: 0 for s in STATUSES}
+    by_severity = {sev: 0 for sev in SEVERITIES}
+    open_by_severity = {sev: 0 for sev in SEVERITIES}
+
+    now = datetime.now()
+    seven_days_ago = now - timedelta(days=7)
+
+    open_ages = []
+    new_last_7_days = 0
+    closed_last_7_days = 0
+
+    for s in summaries:
+        status = s.get('status', 'open')
+        severity = s.get('severity', 'low')
+
+        if status in by_status:
+            by_status[status] += 1
+        if severity in by_severity:
+            by_severity[severity] += 1
+        if status == 'open' and severity in open_by_severity:
+            open_by_severity[severity] += 1
+
+        try:
+            created = datetime.fromisoformat(s.get('created', ''))
+        except (ValueError, TypeError):
+            continue
+
+        if created >= seven_days_ago:
+            new_last_7_days += 1
+
+        if status == 'open':
+            age_days = (now - created).total_seconds() / 86400
+            open_ages.append((age_days, s))
+        elif status == 'closed':
+            pass
+
+    # Oldest open incident
+    oldest_open = None
+    if open_ages:
+        open_ages.sort(key=lambda x: x[0], reverse=True)
+        age, s = open_ages[0]
+        oldest_open = {
+            'id': s['id'],
+            'name': s['name'],
+            'age_days': round(age, 2),
+        }
+
+    mean_open_age = (
+        round(sum(a for a, _ in open_ages) / len(open_ages), 2)
+        if open_ages else 0.0
+    )
+
+    return {
+        'total': total,
+        'by_status': by_status,
+        'by_severity': by_severity,
+        'open_by_severity': open_by_severity,
+        'oldest_open': oldest_open,
+        'mean_open_age_days': mean_open_age,
+        'new_last_7_days': new_last_7_days,
+        'closed_last_7_days': closed_last_7_days,
+    }
 
 if __name__ == '__main__':
     ir_menu()

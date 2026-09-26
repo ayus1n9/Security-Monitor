@@ -23,6 +23,7 @@ from ir_tracker import export_incident_markdown
 from ir_tracker import close_incident
 from ir_tracker import search_incidents
 from ir_tracker import filter_incidents
+from ir_tracker import dashboard_stats
 
 
 @pytest.fixture(autouse=True)
@@ -523,3 +524,66 @@ def test_filter_invalid_status_returns_empty():
 def test_filter_invalid_since_returns_empty():
     create_incident("A")
     assert filter_incidents(since='not-a-date') == []
+
+
+def test_dashboard_empty():
+    stats = dashboard_stats()
+    assert stats['total'] == 0
+    assert stats['by_status'] == {'open': 0, 'closed': 0}
+    assert stats['oldest_open'] is None
+    assert stats['mean_open_age_days'] == 0.0
+
+
+def test_dashboard_counts_by_status_and_severity():
+    create_incident("Open low", severity='low')
+    create_incident("Open high", severity='high')
+    c = create_incident("Closed critical", severity='critical')
+    close_incident(c, "resolved")
+
+    stats = dashboard_stats()
+    assert stats['total'] == 3
+    assert stats['by_status'] == {'open': 2, 'closed': 1}
+    assert stats['by_severity'] == {'low': 1, 'medium': 0, 'high': 1, 'critical': 1}
+    assert stats['open_by_severity'] == {'low': 1, 'medium': 0, 'high': 1, 'critical': 0}
+
+
+def test_dashboard_oldest_open():
+    a = create_incident("Older")
+    b = create_incident("Newer")
+
+    loaded = load_incident(a['id'])
+    loaded['created'] = '2025-01-01T00:00:00'
+    save_incident(loaded)
+
+    stats = dashboard_stats()
+    assert stats['oldest_open'] is not None
+    assert stats['oldest_open']['id'] == a['id']
+    assert stats['oldest_open']['age_days'] > 100
+
+
+def test_dashboard_new_last_7_days():
+    create_incident("Today 1")
+    create_incident("Today 2")
+    stats = dashboard_stats()
+    assert stats['new_last_7_days'] == 2
+
+
+def test_dashboard_ignores_incidents_with_bad_created():
+    a = create_incident("Valid")
+
+    bad = {
+        'id': 'INC-20250101-100000-abcd',
+        'name': 'Bad created',
+        'created': 'not-a-date',
+        'status': 'open',
+        'severity': 'high',
+        'stages': {s: [] for s in STAGES},
+    }
+    path = os.path.join(ir_tracker.INCIDENTS_DIR,
+                        'INC-20250101-100000-abcd.json')
+    with open(path, 'w') as f:
+        json.dump(bad, f)
+
+    stats = dashboard_stats()
+    assert stats['total'] == 2
+    assert stats['new_last_7_days'] == 1
