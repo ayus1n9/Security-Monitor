@@ -22,5 +22,6 @@ Thumbs.db
 
 # Runtime artifacts (generated, not source)
 data/report.txt
-data/incidents/*.json
+data/incidents/
+!data/incidents/.gitkeep
 data/incidents/*_evidence/
