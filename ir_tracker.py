@@ -992,5 +992,26 @@ def add_evidence(incident, stage, evidence_type, description, source_path=None):
 
     return True
 
+def list_evidence(incident, stage=None):
+    """
+    Return evidence attached to an incident, sorted chronologically.
+    Optionally filter to a single lifecycle stage.
+    """
+    if not isinstance(incident, dict):
+        return []
+
+    entries = incident.get('evidence', [])
+    if not isinstance(entries, list):
+        return []
+
+    if stage is not None:
+        entries = [e for e in entries
+                   if isinstance(e, dict) and e.get('stage') == stage]
+
+    def sort_key(e):
+        return e.get('timestamp', '') if isinstance(e, dict) else ''
+
+    return sorted(entries, key=sort_key)
+
 if __name__ == '__main__':
     ir_menu()

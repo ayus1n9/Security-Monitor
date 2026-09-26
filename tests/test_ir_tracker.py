@@ -25,6 +25,7 @@ from ir_tracker import search_incidents
 from ir_tracker import filter_incidents
 from ir_tracker import dashboard_stats
 from ir_tracker import add_evidence
+from ir_tracker import list_evidence
 
 
 @pytest.fixture(autouse=True)
@@ -677,3 +678,54 @@ def test_add_evidence_migrates_old_incident(isolated_incidents_dir):
     ok = add_evidence(loaded, 'Preparation', 'note', 'migration test')
     assert ok is True
     assert len(loaded['evidence']) == 1
+
+
+def test_list_evidence_empty():
+    inc = create_incident("No evidence")
+    assert list_evidence(inc) == []
+
+
+def test_list_evidence_returns_all_sorted():
+    inc = create_incident("Mixed evidence")
+    add_evidence(inc, 'Preparation', 'note', 'first')
+    add_evidence(inc, 'Detection/Analysis', 'pcap', 'second')
+    add_evidence(inc, 'Post-Incident', 'screenshot', 'third')
+
+    results = list_evidence(inc)
+    assert len(results) == 3
+    assert results[0]['description'] == 'first'
+    assert results[1]['description'] == 'second'
+    assert results[2]['description'] == 'third'
+
+
+def test_list_evidence_filters_by_stage():
+    inc = create_incident("Stage filter")
+    add_evidence(inc, 'Preparation', 'note', 'prep item')
+    add_evidence(inc, 'Detection/Analysis', 'pcap', 'detect item 1')
+    add_evidence(inc, 'Detection/Analysis', 'ioc_list', 'detect item 2')
+
+    detection_only = list_evidence(inc, stage='Detection/Analysis')
+    assert len(detection_only) == 2
+    assert all(e['stage'] == 'Detection/Analysis' for e in detection_only)
+
+
+def test_list_evidence_invalid_stage_returns_empty():
+    inc = create_incident("Bogus stage")
+    add_evidence(inc, 'Preparation', 'note', 'some note')
+    assert list_evidence(inc, stage='Nonexistent') == []
+
+
+def test_list_evidence_none_incident():
+    assert list_evidence(None) == []
+
+
+def test_list_evidence_handles_missing_key():
+    old = {
+        'id': 'INC-20250101-100000-abcd',
+        'name': 'Legacy',
+        'created': '2025-01-01T10:00:00',
+        'status': 'open',
+        'severity': 'low',
+        'stages': {s: [] for s in STAGES},
+    }
+    assert list_evidence(old) == []
