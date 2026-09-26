@@ -24,6 +24,7 @@ from ir_tracker import close_incident
 from ir_tracker import search_incidents
 from ir_tracker import filter_incidents
 from ir_tracker import dashboard_stats
+from ir_tracker import add_evidence
 
 
 @pytest.fixture(autouse=True)
@@ -587,3 +588,92 @@ def test_dashboard_ignores_incidents_with_bad_created():
     stats = dashboard_stats()
     assert stats['total'] == 2
     assert stats['new_last_7_days'] == 1
+
+
+def test_add_evidence_reference_only():
+    inc = create_incident("Evidence ref")
+    ok = add_evidence(
+        inc, 'Detection/Analysis',
+        evidence_type='ioc_list',
+        description='Threat intel IOCs from vendor feed',
+    )
+    assert ok is True
+    assert 'evidence' in inc
+    assert len(inc['evidence']) == 1
+    e = inc['evidence'][0]
+    assert e['type'] == 'ioc_list'
+    assert e['stage'] == 'Detection/Analysis'
+    assert e['file'] is None
+    assert 'vendor feed' in e['description']
+
+
+def test_add_evidence_copies_file(isolated_incidents_dir):
+    inc = create_incident("Evidence copy")
+
+    src = os.path.join(str(isolated_incidents_dir), 'capture.pcap')
+    with open(src, 'w') as f:
+        f.write("FAKE PCAP DATA")
+
+    ok = add_evidence(
+        inc, 'Containment/Eradication/Recovery',
+        evidence_type='pcap',
+        description='Attack traffic capture',
+        source_path=src,
+    )
+    assert ok is True
+    e = inc['evidence'][0]
+    assert e['file'] is not None
+    assert e['file'].endswith('capture.pcap')
+
+    evidence_dir = os.path.join(
+        str(isolated_incidents_dir), f"{inc['id']}_evidence"
+    )
+    assert os.path.isdir(evidence_dir)
+    assert os.path.exists(os.path.join(evidence_dir, e['file']))
+
+
+def test_add_evidence_missing_source_returns_false():
+    inc = create_incident("Missing source")
+    ok = add_evidence(
+        inc, 'Preparation', 'pcap', 'desc',
+        source_path='does/not/exist.pcap',
+    )
+    assert ok is False
+    assert inc.get('evidence', []) == []
+
+
+def test_add_evidence_invalid_stage_returns_false():
+    inc = create_incident("Bad stage")
+    ok = add_evidence(inc, 'Bogus Stage', 'pcap', 'desc')
+    assert ok is False
+
+
+def test_add_evidence_empty_description_returns_false():
+    inc = create_incident("Empty desc")
+    assert add_evidence(inc, 'Preparation', 'pcap', '') is False
+    assert add_evidence(inc, 'Preparation', 'pcap', '   ') is False
+
+
+def test_add_evidence_empty_type_returns_false():
+    inc = create_incident("Empty type")
+    assert add_evidence(inc, 'Preparation', '', 'desc') is False
+
+
+def test_add_evidence_migrates_old_incident(isolated_incidents_dir):
+    old = {
+        'id': 'INC-20250101-100000-abcd',
+        'name': 'Legacy',
+        'created': '2025-01-01T10:00:00',
+        'status': 'open',
+        'severity': 'low',
+        'stages': {s: [] for s in STAGES},
+    }
+    path = os.path.join(str(isolated_incidents_dir),
+                        'INC-20250101-100000-abcd.json')
+    with open(path, 'w') as f:
+        json.dump(old, f)
+
+    loaded = load_incident('INC-20250101-100000-abcd')
+    ok = add_evidence(loaded, 'Preparation', 'note', 'migration test')
+    assert ok is True
+    assert len(loaded['evidence']) == 1

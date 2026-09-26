@@ -926,5 +926,71 @@ def dashboard_stats():
         'closed_last_7_days': closed_last_7_days,
     }
 
+def add_evidence(incident, stage, evidence_type, description, source_path=None):
+    """
+    Attach structured evidence to an incident.
+    Optionally copies a file into the incident's evidence directory.
+    Returns True on success, False on failure.
+    """
+    if not validate_incident(incident):
+        print("[warn] Cannot add evidence: invalid incident data")
+        return False
+
+    if stage not in STAGES:
+        print(f"[warn] Invalid stage: {stage!r}")
+        return False
+
+    if not isinstance(evidence_type, str) or not evidence_type.strip():
+        print("[warn] Evidence type must be a non-empty string")
+        return False
+
+    if not isinstance(description, str) or not description.strip():
+        print("[warn] Description must be a non-empty string")
+        return False
+
+    incident.setdefault('evidence', [])
+
+    stored_filename = None
+
+    if source_path is not None:
+        if not os.path.exists(source_path):
+            print(f"[warn] Evidence source not found: {source_path}")
+            return False
+
+        incident_id = incident['id']
+        evidence_dir = os.path.join(
+            INCIDENTS_DIR, f"{incident_id}_evidence"
+        )
+        if not utils.ensure_dir(evidence_dir):
+            return False
+
+        ts_prefix = datetime.now().strftime('%Y%m%d-%H%M%S')
+        stored_filename = (
+            f"{ts_prefix}_{os.path.basename(source_path)}"
+        )
+        dest = os.path.join(evidence_dir, stored_filename)
+
+        try:
+            shutil.copy2(source_path, dest)
+        except OSError as e:
+            print(f"[warn] Failed to copy evidence: {e}")
+            return False
+
+    entry = {
+        'timestamp': datetime.now().isoformat(timespec='seconds'),
+        'stage': stage,
+        'type': evidence_type.strip(),
+        'description': description.strip(),
+        'file': stored_filename,
+    }
+
+    incident['evidence'].append(entry)
+
+    if not save_incident(incident):
+        incident['evidence'].pop()
+        return False
+
+    return True
+
 if __name__ == '__main__':
     ir_menu()
