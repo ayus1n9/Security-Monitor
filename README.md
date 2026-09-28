@@ -2,6 +2,9 @@
 
 A Python CLI for firewall and server log analysis, real-time monitoring, and incident response tracking.
 
+![CI](https://github.com/as1n9/Security-Monitor/actions/workflows/ci.yml/badge.svg)
+![Security & Lint](https://github.com/as1n9/Security-Monitor/actions/workflows/security.yml/badge.svg)
+
 ## Features
 
 ### Log Analyzer
