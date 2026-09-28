@@ -27,3 +27,7 @@ data/incidents/
 data/incidents/*_evidence/
 data/*.png
 data/exports/
+
+dist/
+build/
+*.egg-info/
