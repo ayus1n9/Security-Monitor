@@ -35,7 +35,7 @@ A Python CLI for firewall and server log analysis, real-time monitoring, and inc
 ## Quick Start
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/ayus1n9/Security-Monitor.git
 cd Security-Monitor
 
 python3 -m venv .venv
