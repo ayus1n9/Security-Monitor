@@ -2,8 +2,6 @@
 Tests for log_analyzer plotting functions.
 """
 
-import os
-import pytest
 from sentinelog.log_analyzer import plot_login_timeline, plot_port_distribution
 
 

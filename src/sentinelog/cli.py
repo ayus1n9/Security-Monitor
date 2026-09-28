@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 """
+sentinelog — log analysis + incident response CLI.
+
 Usage:
-    python3 main.py analyze --log data/sample.log --blocklist data/blocklist.txt
-    python3 main.py ir
+    sentinelog analyze --log data/sample.log --blocklist data/blocklist.txt
+    sentinelog respond --log data/sample.log
+    sentinelog watch --log data/sample.log
+    sentinelog ir
 """
 
 import argparse
-from . import utils
-from . import ir_tracker
-from . import log_analyzer
+
+from . import ir_tracker, log_analyzer, utils
+
 
 def parse_ports(s):
     """Parse and validate a comma-separated list of ports."""
@@ -60,7 +64,7 @@ def positive_float(s):
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        prog='security-toolkit',
+        prog='sentinelog',
         description='Firewall log analyzer + Incident Response tracker'
     )
 

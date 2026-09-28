@@ -1,8 +1,6 @@
-# Domain 4 Security Toolkit
+# Sentinelog — Security Toolkit
 
-A Python CLI for firewall log analysis and incident response tracking — 
-built to demonstrate the log-analysis and IR lifecycle skills tested by 
-CompTIA Security+ Domain 4 (Security Operations and Monitoring).
+A Python CLI for firewall and server log analysis, real-time monitoring, and incident response tracking.
 
 ## Features
 
@@ -35,18 +33,22 @@ CompTIA Security+ Domain 4 (Security Operations and Monitoring).
 
 ```bash
 git clone <repo-url>
-cd domain4_tool
-python3 -m venv .venv && source .venv/bin/activate
-pip install matplotlib pytest
+cd Security-Monitor
+
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install the package and development tools
+pip install -e ".[dev]"
 
 # Analyze a log file
-python3 main.py analyze --log data/sample.log --blocklist data/blocklist.txt
+sentinelog analyze --log data/sample.log --blocklist data/blocklist.txt
 
 # Analyze AND auto-open an IR incident
-python3 main.py respond --log data/sample.log
+sentinelog respond --log data/sample.log
 
 # Launch the interactive IR tracker
-python3 main.py ir
+sentinelog ir
 
 # Watch a log file in real time
-python3 main.py watch --log data/sample.log --from-start
+sentinelog watch --log data/sample.log --from-start

@@ -1,11 +1,95 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "sentinelog"
 version = "0.1.0"
+description = "Firewall/server log analyzer and incident-response tracker."
+readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Ayush Singh" },
+]
+keywords = [
+    "security",
+    "log-analysis",
+    "incident-response",
+    "siem",
+    "blue-team",
+    "cli",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: System :: Logging",
+]
 
+# Runtime dependencies
+dependencies = [
+    "matplotlib>=3.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.5",
+    "bandit>=1.7",
+    "pip-audit>=2.6",
+]
+
+[project.urls]
+Homepage = "https://github.com/as1n9/Security-Monitor"
+Source = "https://github.com/as1n9/Security-Monitor"
+Issues = "https://github.com/as1n9/Security-Monitor/issues"
+
+# Console script entry point: `sentinelog` runs sentinelog.cli:main
+[project.scripts]
+sentinelog = "sentinelog.cli:main"
+
+# Package discovery
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# Include README and LICENSE in the source distribution
+[tool.setuptools]
+include-package-data = true
+
+# ----- pytest configuration -----
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+pythonpath = ["src"]
+
+# ----- ruff (linter + formatter) -----
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+exclude = [".venv", "build", "dist"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # isort (import sorting)
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (we set line-length=100 above)
+]
+
+# ----- bandit (security scanner) -----
+[tool.bandit]
+exclude_dirs = ["tests", ".venv", "build", "dist"]

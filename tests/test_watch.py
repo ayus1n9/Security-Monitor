@@ -2,12 +2,11 @@
 Tests for watch_log — the tail-follow monitor.
 """
 
-import os
 import threading
 import time
-import pytest
 
 from sentinelog.log_analyzer import watch_log
+
 
 def _write(tmp_path, lines):
     path = tmp_path / "test.log"

@@ -1,10 +1,11 @@
-import os
-import time
 import ipaddress
-from . import utils
+import os
 import re
+import time
 from collections import defaultdict
 from datetime import datetime, timedelta
+
+from . import utils
 
 LOG_PATTERN = re.compile(
     r'^(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})'
@@ -28,11 +29,11 @@ def parse_log_line(line):
 
     try:
         timestamp = datetime.strptime(match.group('timestamp'), '%Y-%m-%d %H:%M:%S')
-        
+
         dst_port = int(match.group('dst_port'))
         if not 0 <= dst_port <= 65535:
             return None
-        
+
         ipaddress.ip_address(match.group('src_ip'))
         ipaddress.ip_address(match.group('dst_ip'))
     except ValueError:
@@ -55,7 +56,7 @@ def load_blocklist(filepath):
     """
     networks = []
     try:
-        with open(filepath, 'r') as f:
+        with open(filepath) as f:
             for line in f:
                 entry = line.strip()
                 if not entry or entry.startswith('#'):
@@ -79,7 +80,7 @@ def load_logs(filepath, stats=None):
     skipped = 0
 
     try:
-        with open(filepath, 'r') as f:
+        with open(filepath) as f:
             for line in f:
                 parsed = parse_log_line(line.strip())
                 if parsed is None:
@@ -626,7 +627,7 @@ def watch_log(log_path, blocklist_path=None, allowed_ports=None,
                 buffer = []
 
             if size > position:
-                with open(log_path, 'r') as f:
+                with open(log_path) as f:
                     f.seek(position)
                     for line in f:
                         entry = parse_log_line(line.strip())
@@ -675,8 +676,8 @@ def plot_login_timeline(logs, output_path=None):
     try:
         import matplotlib
         matplotlib.use('Agg')
-        import matplotlib.pyplot as plt
         import matplotlib.dates as mdates
+        import matplotlib.pyplot as plt
     except ImportError:
         print("[warn] matplotlib not installed; skipping plot. "
               "Install with: pip install matplotlib")
@@ -775,7 +776,7 @@ def plot_port_distribution(logs, output_path=None, top_n=15):
     ax.set_ylabel('Destination port')
     ax.grid(True, axis='x', linestyle='--', alpha=0.5)
 
-    for bar, value in zip(bars, values):
+    for bar, value in zip(bars, values, strict=True):
         ax.text(bar.get_width() + max(values) * 0.01,
                 bar.get_y() + bar.get_height() / 2,
                 str(value), va='center', fontsize=9)

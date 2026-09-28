@@ -5,27 +5,29 @@ Run: python3 -m pytest tests/ -v
 
 import json
 import os
+
 import pytest
+
 from sentinelog import ir_tracker
 from sentinelog.ir_tracker import (
     STAGES,
+    _auto_severity,
+    add_action,
+    add_evidence,
+    close_incident,
     create_incident,
+    create_incident_from_findings,
+    dashboard_stats,
+    export_all_incidents_markdown,
+    export_incident_markdown,
+    filter_incidents,
+    link_report_to_incident,
+    list_evidence,
+    list_incidents,
     load_incident,
     save_incident,
-    add_action,
-    list_incidents,
-    view_incident,
-    create_incident_from_findings,
-    _auto_severity,
-    link_report_to_incident,
-    export_incident_markdown,
     search_incidents,
-    filter_incidents,
-    dashboard_stats,
-    add_evidence,
-    list_evidence,
-    export_all_incidents_markdown,
-    close_incident,
+    view_incident,
 )
 
 
@@ -573,7 +575,7 @@ def test_dashboard_counts_by_status_and_severity():
 
 def test_dashboard_oldest_open():
     a = create_incident("Older")
-    b = create_incident("Newer")
+    create_incident("Newer")
 
     loaded = load_incident(a['id'])
     loaded['created'] = '2025-01-01T00:00:00'
@@ -593,7 +595,7 @@ def test_dashboard_new_last_7_days():
 
 
 def test_dashboard_ignores_incidents_with_bad_created():
-    a = create_incident("Valid")
+    create_incident("Valid")
 
     bad = {
         'id': 'INC-20250101-100000-abcd',

@@ -1,13 +1,12 @@
 import json
 import os
+import re
 import shutil
 import uuid
-import re
-from datetime import datetime
-from . import utils
-from .utils import load_json, save_json
 from datetime import datetime, timedelta
 
+from . import utils
+from .utils import save_json
 
 STAGES = [
     'Preparation',
@@ -64,7 +63,7 @@ def validate_incident(incident):
     stages = incident.get('stages')
     if not isinstance(stages, dict):
         return False
-    
+
     for stage in STAGES:
         if stage not in stages:
             return False
@@ -129,7 +128,7 @@ def load_incident(incident_id):
         return None
 
     try:
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, encoding='utf-8') as f:
             incident = json.load(f)
     except FileNotFoundError:
         print(f"[warn] Incident not found: {incident_id}")
@@ -822,8 +821,8 @@ def export_incident_markdown(incident, output_path=None):
     lines = []
     lines.append(f"# {incident_id} — {name}")
     lines.append('')
-    lines.append(f"| Field | Value |")
-    lines.append(f"| --- | --- |")
+    lines.append("| Field | Value |")
+    lines.append("| --- | --- |")
     lines.append(f"| ID | `{incident_id}` |")
     lines.append(f"| Created | {created} |")
     lines.append(f"| Status | **{status}** |")

@@ -3,18 +3,18 @@ Unit tests for log_analyzer.py.
 Run: python3 -m pytest tests/ -v
 """
 
-import pytest
 from datetime import datetime
 
 from sentinelog.log_analyzer import (
-    parse_log_line,
-    detect_brute_force,
-    detect_unusual_ports,
     detect_bad_ips,
-    detect_port_scan,
+    detect_brute_force,
     detect_distributed_brute_force,
     detect_off_hours_activity,
+    detect_port_scan,
+    detect_unusual_ports,
+    parse_log_line,
 )
+
 
 def make_entry(ts_str, src, dst, port, action='FAILED', user='root'):
     """Build a log entry dict the way parse_log_line would."""
